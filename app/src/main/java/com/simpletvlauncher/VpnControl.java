@@ -13,14 +13,40 @@ public final class VpnControl {
     private VpnControl() {}
 
     private static final String[] HINTS = {"vpn", "amnezia", "happ", "wireguard", "v2ray", "hiddify", "clash", "nekobox",
-            "sing-box", "singbox", "openvpn", "outline", "proton", "xray", "shadowsocks", "trojan", "tunnel", "warp"};
+            "sing-box", "singbox", "openvpn", "outline", "proton", "xray", "shadowsocks", "trojan", "tunnel", "warp",
+            "dpi", "zapret", "podkop"};
 
-    /** Приложения, похожие на VPN-клиенты (по пакету и названию). */
-    public static List<AppRepo.AppItem> clients(List<AppRepo.AppItem> all) {
+    private static final java.util.Map<String, Boolean> VPN_SERVICE = new java.util.HashMap<>();
+
+    /**
+     * Приложение объявляет системный VPN-сервис (BIND_VPN_SERVICE). Так устроены все клиенты VPN, а также
+     * обходы блокировок через локальный VPN (ByeDPI, WG Tunnel и подобные) — независимо от названия.
+     */
+    private static boolean hasVpnService(Context c, String pkg) {
+        Boolean cached = VPN_SERVICE.get(pkg);
+        if (cached != null) return cached;
+        boolean r = false;
+        try {
+            android.content.pm.PackageInfo pi = c.getPackageManager().getPackageInfo(pkg, android.content.pm.PackageManager.GET_SERVICES);
+            if (pi.services != null) {
+                for (android.content.pm.ServiceInfo si : pi.services) {
+                    if ("android.permission.BIND_VPN_SERVICE".equals(si.permission)) { r = true; break; }
+                }
+            }
+        } catch (Throwable ignored) {}
+        VPN_SERVICE.put(pkg, r);
+        return r;
+    }
+
+    /** Приложения, похожие на VPN-клиенты или DPI-обходчики: по названию пакета/приложения и по наличию VPN-сервиса. */
+    public static List<AppRepo.AppItem> clients(Context c, List<AppRepo.AppItem> all) {
         List<AppRepo.AppItem> res = new ArrayList<>();
         for (AppRepo.AppItem a : all) {
+            if (a.pkg.equals(c.getPackageName())) continue;
             String k = (a.pkg + " " + a.label).toLowerCase(Locale.ROOT);
-            for (String h : HINTS) if (k.contains(h)) { res.add(a); break; }
+            boolean hit = false;
+            for (String h : HINTS) if (k.contains(h)) { hit = true; break; }
+            if (hit || hasVpnService(c, a.pkg)) res.add(a);
         }
         return res;
     }

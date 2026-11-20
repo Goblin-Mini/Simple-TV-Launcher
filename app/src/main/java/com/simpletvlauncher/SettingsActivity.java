@@ -76,7 +76,7 @@ public class SettingsActivity extends Activity {
 
         section(L.t("Внешний вид"));
 
-        row(L.t("Язык / Language"), this::langLabel, this::askLang);
+        row(L.t("Язык приложения"), this::langLabel, this::askLang);
         toggle(L.t("Показывать дату и день недели"), prefs::showDate, prefs::setShowDate);
         toggle(L.t("Кнопка поиска вверху"), prefs::showSearchBtn, prefs::setShowSearchBtn);
         toggle(L.t("Кнопка выбора источника сигнала"), prefs::showSourceBtn, prefs::setShowSourceBtn);
@@ -331,7 +331,7 @@ public class SettingsActivity extends Activity {
     private void askVpn() {
         Weather.IO.execute(() -> {
             final List<AppRepo.AppItem> all = AppRepo.loadAll(this);
-            final List<AppRepo.AppItem> cl = VpnControl.clients(all);
+            final List<AppRepo.AppItem> cl = VpnControl.clients(this, all);
             runOnUiThread(() -> {
                 if (cl.isEmpty()) { toast(L.t("VPN-клиенты не найдены — установите приложение")); return; }
                 String[] names = new String[cl.size() + 1];
@@ -383,7 +383,7 @@ public class SettingsActivity extends Activity {
 
     private void askLang() {
         String[] names = {L.t("Авто (по системе)"), L.t("Русский"), "English"};
-        GlassDialog.menu(this, L.t("Язык / Language"), names, i -> {
+        GlassDialog.menu(this, L.t("Язык приложения"), names, i -> {
             prefs.setLang(i == 0 ? "auto" : i == 1 ? "ru" : "en");
             L.init(this);
             recreate();         // экран заново строится на выбранном языке

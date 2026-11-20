@@ -744,6 +744,10 @@ public class MainActivity extends Activity {
         rebuildTiles();
         layoutContent();
         sig = sigOf();
+        // нижние кнопки при смене числа рядов съезжают вниз/вверх, а подсветка — отдельный вид и остаётся на прежнем месте:
+        // если фокус на одной из них (не на плитке приложения), ведём подсветку за ней
+        View cf = getCurrentFocus();
+        if (cf != null && !(cf instanceof AppTile) && cf instanceof GlassView && cf.getParent() == content) moveHighlight(cf);
         if (pendingFocus >= 0 && !tiles.isEmpty()) {
             int fi = Math.min(pendingFocus, tiles.size() - 1);
             pendingFocus = -1;
@@ -1123,7 +1127,7 @@ public class MainActivity extends Activity {
 
     /** Выбор клиента VPN прямо с главного экрана (долгое нажатие на ключ) — то же, что в настройках лаунчера. */
     private void pickVpnClient() {
-        final List<AppRepo.AppItem> cl = VpnControl.clients(all);
+        final List<AppRepo.AppItem> cl = VpnControl.clients(this, all);
         if (cl.isEmpty()) {
             android.widget.Toast.makeText(this, L.t("VPN-клиенты не найдены. Установите приложение и выберите его в настройках лаунчера"), android.widget.Toast.LENGTH_LONG).show();
             return;
@@ -1258,7 +1262,33 @@ public class MainActivity extends Activity {
         return Icons.INPUT;
     }
 
+    /**
+     * Системные панели выбора источника разных прошивок (компонент или действие). Перебираем по очереди и берём первую,
+     * которая запустилась: у одного телевизора есть панель MediaTek, у другого Xiaomi, у третьего стандартная Google.
+     */
+    private static final String[][] SYSTEM_SOURCE_PANELS = {
+            {"com.mediatek.wwtv.tvcenter", "com.mediatek.wwtv.tvcenter.nav.inputpanel.InputsPanelActivity"},
+            {"act", "com.xiaomi.mitv.settings.INPUTSOURCE_POPUP"},
+            {"act", "com.mitv.tvhome.atv.app.tv.INPUTSOURCE_POPUP"},
+            {"com.formovie.fmmediaselect", "com.formovie.fmmediaselect.MainActivity"},
+            {"com.google.android.tvlauncher", "com.google.android.tvlauncher.inputs.InputsPanelActivity"},
+    };
+
+    private boolean openSystemSourcePanel() {
+        for (String[] p : SYSTEM_SOURCE_PANELS) {
+            try {
+                Intent i = "act".equals(p[0]) ? new Intent(p[1]) : new Intent().setClassName(p[0], p[1]);
+                startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                return true;
+            } catch (Throwable ignored) {
+                // такой панели в прошивке нет или она закрыта для сторонних приложений — пробуем следующую
+            }
+        }
+        return false;
+    }
+
     private void pickSource() {
+        if (openSystemSourcePanel()) return;
         refreshInputs();
         if (inputs.isEmpty()) {
             android.widget.Toast.makeText(this, L.t("Источники сигнала не найдены"), android.widget.Toast.LENGTH_SHORT).show();

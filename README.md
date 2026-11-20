@@ -6,6 +6,7 @@ A lightweight tvOS-style Android TV launcher with a frosted-glass look: app tile
 
 <img width="1920" height="1080" alt="photo_1_2026-11-20_23-49-09" src="https://github.com/user-attachments/assets/bdc50171-cd1f-4d2b-9eb2-0d3adc442961" />
 <img width="1920" height="1080" alt="photo_2_2026-11-20_23-49-10" src="https://github.com/user-attachments/assets/55f39c73-cec2-42e0-9300-83f936d00d95" />
+
 <details>
 
 <summary>More screenshots</summary>
@@ -25,7 +26,7 @@ A lightweight tvOS-style Android TV launcher with a frosted-glass look: app tile
 - App tiles with sorting, hiding, a configurable grid and wallpapers (image, video)
 - Weather (MET Norway, 7Timer, Bright Sky); metric / US / UK units
 - Network indicator with a crossed-out icon when there is no internet access
-- Voice search via a chosen app, VPN client picker
+- Voice search via a chosen app, VPN and DPI client picker
 - Parental control (PIN) and "Granny mode"
 - Settings backup and restore
 - Russian and English UI (follows the system language)
