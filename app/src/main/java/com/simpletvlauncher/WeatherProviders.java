@@ -28,7 +28,7 @@ final class WeatherProviders {
         c.setConnectTimeout(8000);
         c.setReadTimeout(20000);
         c.setRequestProperty("Accept", "application/json");
-        c.setRequestProperty("User-Agent", "SimpleTVLauncher/1.3 (Android TV)");
+        c.setRequestProperty("User-Agent", "SimpleTVLauncher/1.3.1 (Android TV)");
         if (headers != null) for (String[] h : headers) c.setRequestProperty(h[0], h[1]);
         int code = c.getResponseCode();
         if (code < 200 || code >= 300) throw new Exception("HTTP " + code);
@@ -104,7 +104,7 @@ final class WeatherProviders {
         String url = "https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=" + String.format(Locale.US, "%.4f", lat)
                 + "&lon=" + String.format(Locale.US, "%.4f", lon);
         // MET Norway требует идентифицировать приложение в User-Agent
-        JSONObject root = new JSONObject(http(url, new String[][]{{"User-Agent", "SimpleTVLauncher/1.3"}}));
+        JSONObject root = new JSONObject(http(url, new String[][]{{"User-Agent", "SimpleTVLauncher/1.3.1"}}));
         JSONArray ts = root.getJSONObject("properties").getJSONArray("timeseries");
         SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US);
         f.setTimeZone(TimeZone.getTimeZone("UTC"));

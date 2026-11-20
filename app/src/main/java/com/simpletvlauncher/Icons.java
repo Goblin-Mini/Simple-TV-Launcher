@@ -8,7 +8,7 @@ import android.graphics.RectF;
 /** Все иконки рисуются кодом — никаких внешних ресурсов. */
 public final class Icons {
     public static final int GEAR = 1, WIFI = 2, ETH = 3, GRID = 5, LIST = 6, TUNE = 7,
-            WIFI_NOINET = 19, ETH_NOINET = 20, WIFI_OFF = 8, REFRESH = 10, IMAGE = 14, INPUT = 15, VPN = 16, SEARCH = 17, LOCK = 18,
+            ETH_NOINET = 30, WIFI_OFF = 8, REFRESH = 10, IMAGE = 14, INPUT = 15, VPN = 16, SEARCH = 17, LOCK = 18,
             SRC_HDMI = 20, SRC_DP = 21, SRC_AV = 22, SRC_SVIDEO = 23, SRC_COMPONENT = 24,
             SRC_VGA = 25, SRC_DVI = 26, SRC_SCART = 27, SRC_TUNER = 28;
 
@@ -127,19 +127,15 @@ public final class Icons {
     private static final Path PATH = new Path();
 
     public static void draw(Canvas c, int type, float cx, float cy, float r, Paint p, int color) {
-        if (type == WIFI_NOINET || type == ETH_NOINET) {
-            // значок сети с косой чертой: подключение есть, а интернета нет
-            draw(c, type == WIFI_NOINET ? WIFI : ETH, cx, cy, r, p, color);
+        if (type == ETH_NOINET) {
+            // Ethernet с белой косой чертой (как у Wi-Fi без подключения): кабель подключён, а интернета нет
+            draw(c, ETH, cx, cy, r, p, color);
             p.setShader(null);
+            p.setColor(color);
             p.setStyle(Paint.Style.STROKE);
             p.setStrokeCap(Paint.Cap.ROUND);
-            float x0 = cx - r * 0.85f, y0 = cy - r * 0.85f, x1 = cx + r * 0.85f, y1 = cy + r * 0.85f;
-            p.setColor(0x66000000);             // тёмная кайма, чтобы черта читалась на любом значке
-            p.setStrokeWidth(r * 0.42f);
-            c.drawLine(x0, y0, x1, y1, p);
-            p.setColor(0xFFFF6B5E);
-            p.setStrokeWidth(r * 0.2f);
-            c.drawLine(x0, y0, x1, y1, p);
+            p.setStrokeWidth(r * 0.16f);
+            c.drawLine(cx - r * 0.8f, cy - r * 0.7f, cx + r * 0.8f, cy + r * 0.8f, p);
             p.setStyle(Paint.Style.FILL);
             return;
         }

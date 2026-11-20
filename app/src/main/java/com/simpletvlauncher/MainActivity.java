@@ -305,7 +305,8 @@ public class MainActivity extends Activity {
         }
         applyBackground();
         bg.syncLook();
-        updateClock();
+        h.removeCallbacks(tick);        // onPause останавливает часы, а onStart после короткой паузы не вызывается — запускаем их здесь
+        h.post(tick);
         layoutTop();
         updateNotice();
         // всё тяжёлое (сеть, разбор погоды) — уже после первого кадра, чтобы рабочий стол появлялся мгновенно
@@ -348,18 +349,12 @@ public class MainActivity extends Activity {
         unregisterNet();
     }
 
-    @Override protected void onStart() {
-        super.onStart();
-        h.removeCallbacks(tick);
-        h.post(tick);
-    }
-
     @Override protected void onNewIntent(Intent i) {
         super.onNewIntent(i);
         // одно нажатие Home на некоторых ТВ приходит дважды (от службы и от системы) — повтор в течение 2 секунд не обрабатываем,
         // иначе выбор плитки, сделанный сразу после Home, сбрасывался бы обратно на первую
         long now = android.os.SystemClock.elapsedRealtime();
-        if (now - lastHome < 2000) return;
+        if (now - lastHome < 1000) return;
         lastHome = now;
         // нажатие Home: закрыть всё лишнее и вернуться к первой плитке
         if (dialog != null && dialog.isShowing()) dialog.dismiss();
@@ -1090,7 +1085,7 @@ public class MainActivity extends Activity {
         btnVpn.invalidate();
         btnVpn.postInvalidateOnAnimation();
         if (btnVpn.getParent() instanceof View) ((View) btnVpn.getParent()).invalidate();
-        btnNet.icon = eth ? (noInet ? Icons.ETH_NOINET : Icons.ETH) : wifi ? (noInet ? Icons.WIFI_NOINET : Icons.WIFI) : (noInet ? Icons.WIFI_NOINET : Icons.WIFI_OFF);
+        btnNet.icon = eth ? (noInet ? Icons.ETH_NOINET : Icons.ETH) : wifi ? (noInet ? Icons.WIFI_OFF : Icons.WIFI) : Icons.WIFI_OFF;
         btnNet.title = netTitle();
         btnNet.invalidate();
         layoutTop();
