@@ -9,7 +9,6 @@ A lightweight tvOS-style Android TV launcher with a frosted-glass look: app tile
 ## Features
 - App tiles with sorting, hiding, a configurable grid and wallpapers (image, video)
 - Weather (MET Norway, 7Timer, Bright Sky); metric / US / UK units
-- Network indicator with a crossed-out icon when there is no internet access
 - Voice search via a chosen app, VPN client picker
 - Parental control (PIN) and "Granny mode"
 - Settings backup and restore
