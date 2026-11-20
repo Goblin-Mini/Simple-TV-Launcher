@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_key_label">Simple TV Launcher</string>
+    <string name="home_key_desc">Required so that the Home button opens Simple TV Launcher (on some TVs it stubbornly opens the stock launcher) and so that the launcher opens by itself when the TV is switched on. The service reads and does nothing else.</string>
+</resources>
