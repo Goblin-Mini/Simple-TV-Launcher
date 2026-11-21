@@ -1267,6 +1267,9 @@ public class MainActivity extends Activity {
      * которая запустилась: у одного телевизора есть панель MediaTek, у другого Xiaomi, у третьего стандартная Google.
      */
     private static final String[][] SYSTEM_SOURCE_PANELS = {
+            // действие + компонент (Xiaomi, панель из приложения Live TV: работает и при отключённом стоковом лаунчере)
+            {"act+cmp", "com.android.tv.action.VIEW_INPUTS", "com.mitv.livetv", "com.mitv.livetv.input.SelectInputActivity"},
+            {"act", "com.android.tv.action.VIEW_INPUTS"},
             {"com.mediatek.wwtv.tvcenter", "com.mediatek.wwtv.tvcenter.nav.inputpanel.InputsPanelActivity"},
             {"act", "com.xiaomi.mitv.settings.INPUTSOURCE_POPUP"},
             {"act", "com.mitv.tvhome.atv.app.tv.INPUTSOURCE_POPUP"},
@@ -1277,7 +1280,10 @@ public class MainActivity extends Activity {
     private boolean openSystemSourcePanel() {
         for (String[] p : SYSTEM_SOURCE_PANELS) {
             try {
-                Intent i = "act".equals(p[0]) ? new Intent(p[1]) : new Intent().setClassName(p[0], p[1]);
+                Intent i;
+                if ("act+cmp".equals(p[0])) i = new Intent(p[1]).setClassName(p[2], p[3]);
+                else if ("act".equals(p[0])) i = new Intent(p[1]);
+                else i = new Intent().setClassName(p[0], p[1]);
                 startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 return true;
             } catch (Throwable ignored) {
