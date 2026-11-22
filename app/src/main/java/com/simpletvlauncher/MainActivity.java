@@ -52,7 +52,7 @@ public class MainActivity extends Activity {
     private VideoBg video;
     private HighlightView hlTop, hlGrid, hlTopR, hlGridR;     // под плитками (таблетка, тень) и поверх (кольцо)
     private HighlightView[] hls() { return new HighlightView[]{hlTop, hlGrid, hlTopR, hlGridR}; }
-    private GlassView weatherPill, capsule, btnVpn, btnNet, btnGear, btnSource, btnSearch;
+    private GlassView weatherPill, capsule, btnVpn, btnNet, btnGear, btnSource, btnSearch, btnApps, btnLauncher;
     private int langV;                  // версия языка, с которой построен экран
     private long lastHome = -10000;
     private static final long UNLOCK_MS = 3 * 60 * 1000L;
@@ -276,6 +276,30 @@ public class MainActivity extends Activity {
 
         applyPrefs();
         loadApps();
+        if (b == null) maybeAutostartApp();
+    }
+
+    /**
+     * Запускает выбранное в настройках приложение, когда устройство только что включили. Срабатывает один раз за загрузку:
+     * если лаунчер потом выгрузился из памяти и стартовал заново, приложение повторно не открывается.
+     */
+    private void maybeAutostartApp() {
+        final String pkg = prefs.autoApp();
+        if (pkg.isEmpty()) return;
+        long up = android.os.SystemClock.elapsedRealtime();
+        if (up > 5 * 60 * 1000L) return;            // включили давно — это уже не старт устройства
+        int boots = -1;
+        try { boots = Settings.Global.getInt(getContentResolver(), "boot_count", -1); } catch (Throwable ignored) {}
+        String id = boots != -1 ? "b" + boots : "t" + (System.currentTimeMillis() - up) / 60000L;     // номер загрузки, а если его нет — время старта системы
+        if (id.equals(prefs.autoBootDone())) return;
+        prefs.setAutoBootDone(id);                  // отмечаем до запуска, чтобы сбой приложения не вызвал повтор
+        h.postDelayed(() -> {
+            try {
+                Intent i = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
+                if (i == null) i = getPackageManager().getLaunchIntentForPackage(pkg);
+                if (i != null) startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Throwable ignored) {}
+        }, 800);
     }
 
     @Override protected void onDestroy() {
@@ -323,8 +347,49 @@ public class MainActivity extends Activity {
         });
     }
 
+    // ---- автосмена обоев ----
+    // Ничего не крутится в фоне: пока рабочий стол на экране, ставится ОДИН отложенный вызов на остаток интервала,
+    // а при уходе с экрана он снимается. Если срок вышел, пока лаунчер был закрыт, обои меняются при возврате на рабочий стол.
+    private final Runnable wpTick = new Runnable() {
+        @Override public void run() { rotateWallpaper(); }
+    };
+
+    private void scheduleWallpaper() {
+        h.removeCallbacks(wpTick);
+        if (!resumed || !prefs.wpActive()) return;
+        long every = prefs.wpIntervalMs();
+        long left = prefs.wpLast() + every - System.currentTimeMillis();
+        if (left <= 0 || left > every) rotateWallpaper();     // срок вышел (или часы переведены назад)
+        else h.postDelayed(wpTick, left);
+    }
+
+    private boolean wpBusy;
+
+    private void rotateWallpaper() {
+        if (wpBusy || !resumed) return;
+        // обои меняются только пока лаунчер на экране и в фокусе (не закрыт меню или другим окном); иначе чуть позже проверяем снова
+        if (!hasWindowFocus() || (dialog != null && dialog.isShowing())) {
+            h.removeCallbacks(wpTick);
+            h.postDelayed(wpTick, 3000);
+            return;
+        }
+        wpBusy = true;
+        Weather.IO.execute(() -> {
+            final boolean changed = Bg.wpNext(this, prefs);
+            runOnUiThread(() -> {
+                wpBusy = false;
+                if (changed && resumed) {
+                    bg.fadeNext();          // новая картинка проявляется плавно поверх прежней
+                    applyBackground();
+                }
+                scheduleWallpaper();
+            });
+        });
+    }
+
     private final Runnable lateResume = new Runnable() {
         @Override public void run() {
+            scheduleWallpaper();
             updateNet();
             startNetPoll();
             registerNet();
@@ -345,6 +410,7 @@ public class MainActivity extends Activity {
         video.pause();
         h.removeCallbacks(netPoll);
         h.removeCallbacks(lateResume);
+        h.removeCallbacks(wpTick);
         h.removeCallbacks(tick);
         unregisterNet();
     }
@@ -408,8 +474,10 @@ public class MainActivity extends Activity {
         th = tw * 9f / 16f;      // баннеры Android TV — 16:9
         // два ряда вместе с нижней частью обязаны помещаться без прокрутки на любом экране: при нехватке высоты плитки уменьшаются,
         // а свободная ширина уходит в интервал между ними
-        float below = 34 * s + 60 * s + 25 * s + 46 * s + 104 * s + BOTTOM_PAD * s;
-        float maxTh = (H - vy - gridTop() - below - gap) / 2f;
+        float below = prefs.panelTop() ? 34 * s + END_PAD * s : 34 * s + 60 * s + 25 * s + 46 * s + 104 * s + BOTTOM_PAD * s;
+        // при самой крупной сетке (4 плитки в ряду) с нижней панелью «Настройки» без прокрутки помещается один ряд, с панелью наверху — два
+        int fit = cols == 4 && !prefs.panelTop() ? 1 : 2;
+        float maxTh = (H - vy - gridTop() - below - (fit - 1) * gap) / fit;
         if (maxTh > 0 && th > maxTh) { th = maxTh; tw = th * 16f / 9f; }
         slotW = tw;
         pitch = cols > 1 ? (availW - tw) / (cols - 1) : tw + gap;
@@ -417,6 +485,7 @@ public class MainActivity extends Activity {
     }
 
     private static final float BOTTOM_PAD = 50f;     // фиксированный отступ под «Настройками», в условных пикселях
+    private static final float END_PAD = 40f;        // отступ под матовой панелью, когда нижней панели «Настройки» нет
 
     private float gridTop() { return 100 * s; }
     private float slotX(int i) { return mx + (i % cols) * pitch; }
@@ -496,7 +565,14 @@ public class MainActivity extends Activity {
         btnVpn = glass(ph / 2, Icons.VPN, null);
         btnNet = glass(ph / 2, Icons.WIFI, null);
         btnGear = glass(ph / 2, Icons.GEAR, null);
-        for (GlassView g : new GlassView[]{btnSearch, btnSource, btnVpn, btnNet, btnGear}) { g.plain = true; place(g, 0, topY, ph, ph); }
+        btnApps = glass(ph / 2, Icons.GRID, null);
+        btnLauncher = glass(ph / 2, Icons.TUNE, null);
+        for (GlassView g : new GlassView[]{btnSearch, btnSource, btnVpn, btnNet, btnApps, btnGear, btnLauncher}) { g.plain = true; place(g, 0, topY, ph, ph); }
+        // кнопки нижней панели «Настройки», когда она перенесена наверх (см. «Кнопки настроек вверху» в настройках)
+        btnApps.title = L.t("Все приложения");
+        btnApps.setOnClickListener(v -> onPanelTile(0));
+        btnLauncher.title = L.t("Настройки лаунчера");
+        btnLauncher.setOnClickListener(v -> onPanelTile(2));
         btnSearch.title = L.t("Поиск");
         btnSearch.setOnClickListener(v -> onSearchClick(false));
         btnSearch.setOnLongClickListener(v -> { onSearchClick(true); return true; });
@@ -570,10 +646,14 @@ public class MainActivity extends Activity {
         btnSource.setVisibility(src ? View.VISIBLE : View.GONE);
         btnSource.setFocusable(src);
         if (src) bs.add(btnSource);
-        boolean sv2 = prefs.showVpnBtn(), sn = prefs.showNetBtn(), sg = prefs.showGearBtn();
+        // с кнопками настроек наверху (нижней панели нет) шестерня остаётся всегда: иначе до системных настроек не добраться
+        boolean pt = prefs.panelTop();
+        boolean sv2 = prefs.showVpnBtn(), sn = prefs.showNetBtn(), sg = prefs.showGearBtn() || pt;
         show(btnVpn, sv2); show(btnNet, sn); show(btnGear, sg);
+        show(btnApps, pt); show(btnLauncher, pt);
         if (sv2) bs.add(btnVpn);
         if (sn) bs.add(btnNet);
+        if (pt) { bs.add(btnApps); bs.add(btnLauncher); }
         if (sg) bs.add(btnGear);
         capsule.setVisibility(bs.isEmpty() ? View.GONE : View.VISIBLE);
         float pad = 0;      // края капсулы совпадают с краями белого кружка
@@ -675,9 +755,17 @@ public class MainActivity extends Activity {
         frost.setLayoutParams(fl);
         frost.setVisibility(View.VISIBLE);
         float hdrY = gridEnd + 34 * s + 60 * s + 25 * s, panelY = hdrY + 46 * s, panelH = 104 * s;
-        moveTo(setHdr, mx, hdrY);
-        for (int i = 0; i < SET_COUNT; i++) moveTo(setTiles[i], mx + i * (324 * s), panelY);
-        contentH = Math.round(panelY + panelH + BOTTOM_PAD * s);     // фиксированный отступ снизу после «Настроек»
+        boolean pt = prefs.panelTop();
+        setHdr.setVisibility(pt ? View.GONE : View.VISIBLE);
+        for (GlassView g : setTiles) show(g, !pt);
+        if (pt) {
+            // нижней панели нет: ни заголовка, ни кнопок, ни отступа под ними — ниже матовой панели остаётся лишь небольшой край
+            contentH = Math.round(gridEnd + 34 * s + END_PAD * s);
+        } else {
+            moveTo(setHdr, mx, hdrY);
+            for (int i = 0; i < SET_COUNT; i++) moveTo(setTiles[i], mx + i * (324 * s), panelY);
+            contentH = Math.round(panelY + panelH + BOTTOM_PAD * s);     // фиксированный отступ снизу после «Настроек»
+        }
         // ScrollView меряет содержимое без учёта заданной высоты (по самому нижнему элементу), поэтому нижний отступ задаём минимальной высотой
         content.setMinimumHeight(contentH);
         ViewGroup.LayoutParams lp = content.getLayoutParams();
@@ -694,7 +782,7 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------ настройки / данные
     private String sigOf() {
         return prefs.hidden().toString() + prefs.order() + prefs.theme() + prefs.showDate()
-                + prefs.cols() + prefs.bgMode() + prefs.showSourceBtn() + prefs.showSearchBtn() + prefs.showVpnBtn() + prefs.showNetBtn() + prefs.showGearBtn() + prefs.showWeather();
+                + prefs.cols() + prefs.bgMode() + prefs.showSourceBtn() + prefs.showSearchBtn() + prefs.showVpnBtn() + prefs.showNetBtn() + prefs.showGearBtn() + prefs.showWeather() + prefs.panelTop();
     }
 
     private void applyPrefs() {

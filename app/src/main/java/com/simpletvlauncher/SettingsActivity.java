@@ -84,6 +84,7 @@ public class SettingsActivity extends Activity {
         toggle(L.t("Значок сети вверху"), prefs::showNetBtn, prefs::setShowNetBtn);
         toggle(L.t("Шестерня системных настроек вверху"), prefs::showGearBtn, prefs::setShowGearBtn);
         toggle(L.t("Виджет погоды"), prefs::showWeather, prefs::setShowWeather);
+        toggle(L.t("Кнопки настроек вверху вместо нижней панели"), prefs::panelTop, prefs::setPanelTop);
 
         section(L.t("Фон главного экрана"));
         modeRow = row(L.t("Тип фона"), () -> L.t(Prefs.BG_MODES[prefs.bgMode()]), this::askMode);
@@ -92,6 +93,10 @@ public class SettingsActivity extends Activity {
         } else if (mode == 1) {
             row(L.t("Выбрать изображение"), () -> Bg.has(this) ? L.t("задано") : L.t("не задано"), () ->
                     startActivity(new Intent(this, BgPickerActivity.class)));
+            row(L.t("Автосмена обоев: папка"), () -> prefs.wpBucket().isEmpty() ? L.t("Выкл") : prefs.wpName(), () ->
+                    startActivity(new Intent(this, BgPickerActivity.class).putExtra("folders", true)));
+            row(L.t("Интервал смены обоев"), () -> L.t(Prefs.WP_NAMES[prefs.wpInterval()]), this::askWpInterval);
+            row(L.t("Следующее изображение"), () -> "", this::nextWallpaper);
             slider(L.t("Затемнение"), 0, 80, 10, prefs::bgDim, prefs::setBgDim, " %");
             slider(L.t("Насыщенность"), 0, 100, 10, prefs::bgSat, prefs::setBgSat, " %");
             slider(L.t("Размытие"), 0, 100, 10, prefs::bgBlur, prefs::setBgBlur, " %");
@@ -102,7 +107,7 @@ public class SettingsActivity extends Activity {
             slider(L.t("Насыщенность"), 0, 100, 10, prefs::bgSat, prefs::setBgSat, " %");
         }
         section(L.t("Сетка приложений"));
-        slider(L.t("Приложений в ряду"), 6, 10, 1, prefs::cols, prefs::setCols, "");
+        slider(L.t("Приложений в ряду"), 4, 10, 1, prefs::cols, prefs::setCols, "");
 
         section(L.t("Подключения"));
         row(L.t("Клиент для VPN"), () -> vpnLabel(), this::askVpn);
@@ -133,6 +138,7 @@ public class SettingsActivity extends Activity {
         // оба пункта включены по умолчанию, но без доступа к спецвозможностям не работают — пока он нужен, но не получен, рядом с «Вкл» жёлтый «!»
         warn(row(L.t("Кнопка домой ведёт в Simple TV Launcher (нужны спецвозможности)"), () -> prefs.homeKey() ? L.t("Вкл") : L.t("Выкл"), () -> prefs.setHomeKey(!prefs.homeKey())), prefs::homeKey);
         warn(row(L.t("Автозапуск лаунчера при включении ТВ (нужны спецвозможности)"), () -> prefs.bootHome() ? L.t("Вкл") : L.t("Выкл"), () -> prefs.setBootHome(!prefs.bootHome())), prefs::bootHome);
+        row(L.t("Приложение при включении ТВ"), this::autoLabel, this::askAutoApp);
         final GlassView access = row(L.t("Доступ к спецвозможностям"), () -> HomeFix.isOn(this) ? L.t("Получен") : L.t("Отсутствует"), () -> HomeFix.showHelp(this, this::refresh));
         refreshers.add(() -> { access.tint = HomeFix.needed(this) ? 0x70FFB020 : 0; access.invalidate(); });     // подсвечена, пока доступ нужен, но не получен
         row("Simple TV Launcher", () -> L.t("версия ") + versionName(), this::showAbout);
@@ -328,6 +334,30 @@ public class SettingsActivity extends Activity {
         catch (Throwable t) { return L.t("не установлен"); }
     }
 
+    private String autoLabel() {
+        String p = prefs.autoApp();
+        if (p.isEmpty()) return L.t("не выбрано");
+        try { return getPackageManager().getApplicationLabel(getPackageManager().getApplicationInfo(p, 0)).toString(); }
+        catch (Throwable t) { return L.t("не установлено"); }
+    }
+
+    /** Приложение, которое откроется при включении устройства (не при каждом запуске лаунчера). */
+    private void askAutoApp() {
+        Weather.IO.execute(() -> {
+            final List<AppRepo.AppItem> apps = new ArrayList<>();
+            for (AppRepo.AppItem a : AppRepo.loadAll(this)) if (!a.pkg.equals(getPackageName())) apps.add(a);
+            runOnUiThread(() -> {
+                String[] names = new String[apps.size() + 1];
+                names[0] = L.t("Не использовать");
+                for (int i = 0; i < apps.size(); i++) names[i + 1] = apps.get(i).label;
+                GlassDialog.menu(this, L.t("Приложение при включении ТВ"), names, i -> {
+                    prefs.setAutoApp(i == 0 ? "" : apps.get(i - 1).pkg);
+                    refresh();
+                }).show();
+            });
+        });
+    }
+
     private void askVpn() {
         Weather.IO.execute(() -> {
             final List<AppRepo.AppItem> all = AppRepo.loadAll(this);
@@ -356,6 +386,26 @@ public class SettingsActivity extends Activity {
             bgView.setAccent(prefs.settingsAccent());
             build();
             modeRow.requestFocus();
+        }).show();
+    }
+
+    /** Ручная смена обоев: следующая картинка из выбранной папки, отсчёт интервала начинается заново. */
+    private void nextWallpaper() {
+        if (!prefs.wpActive()) { toast(L.t("Сначала выберите папку для автосмены")); return; }
+        Weather.IO.execute(() -> {
+            final boolean ok = Bg.wpNext(this, prefs);
+            runOnUiThread(() -> {
+                toast(ok ? L.t("Обои сменены") : L.t("Не удалось сменить обои"));
+                if (ok) bgView.refresh(prefs.settingsAccent());
+            });
+        });
+    }
+
+    private void askWpInterval() {
+        GlassDialog.menu(this, L.t("Интервал смены обоев"), Prefs.tr(Prefs.WP_NAMES), prefs.wpInterval(), i -> {
+            prefs.setWpInterval(i);
+            prefs.setWpLast(System.currentTimeMillis());        // новый интервал отсчитывается с этого момента
+            refresh();
         }).show();
     }
 

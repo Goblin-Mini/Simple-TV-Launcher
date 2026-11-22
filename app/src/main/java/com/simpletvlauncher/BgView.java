@@ -110,12 +110,64 @@ public class BgView extends View {
         }
         Bg.Cb cb = new Bg.Cb() {
             @Override public void done(Bitmap bmp) {
+                boolean fadeIt = wantFade && main && !soft && bmp != null && backdrop != null && bmp != backdrop && getWidth() > 0;
+                wantFade = false;
+                if (fadeIt) { startFade(bmp); return; }
+                cancelFade();
                 backdrop = bmp;
                 blurredBmp = null;
                 invalidateTree(getRootView());
             }
         };
         if (soft) Bg.requestSoft(getContext(), cb); else Bg.request(getContext(), cb);
+    }
+
+    // ---- плавная смена картинки (автосмена обоев на рабочем столе) ----
+    private boolean wantFade, blurSwitched;
+    private float fade = 1f;
+    private Bitmap prevBackdrop;
+    private android.animation.ValueAnimator fadeAnim;
+
+    /** Следующая загруженная картинка не заменит прежнюю сразу, а плавно проявится поверх неё. */
+    public void fadeNext() { wantFade = true; }
+
+    private void cancelFade() {
+        if (fadeAnim != null) { fadeAnim.removeAllListeners(); fadeAnim.cancel(); fadeAnim = null; }
+        prevBackdrop = null;
+        fade = 1f;
+    }
+
+    private void startFade(Bitmap next) {
+        cancelFade();
+        prevBackdrop = backdrop;
+        backdrop = next;
+        fade = 0f;
+        blurSwitched = false;
+        fadeAnim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        fadeAnim.setDuration(1400);
+        fadeAnim.addUpdateListener(new android.animation.ValueAnimator.AnimatorUpdateListener() {
+            @Override public void onAnimationUpdate(android.animation.ValueAnimator a) {
+                fade = (Float) a.getAnimatedValue();
+                if (!blurSwitched && fade >= 0.5f) {
+                    // матовые панели переходят на размытие новой картинки на середине смены (оно считается заново)
+                    blurSwitched = true;
+                    blurredBmp = null;
+                    invalidateTree(getRootView());
+                } else {
+                    invalidate();
+                }
+            }
+        });
+        fadeAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator a) {
+                fadeAnim = null;
+                prevBackdrop = null;
+                fade = 1f;
+                if (!blurSwitched) { blurSwitched = true; blurredBmp = null; }
+                invalidateTree(getRootView());
+            }
+        });
+        fadeAnim.start();
     }
 
     /** Размытый кадр видео: на остальных экранах это сам фон, на рабочем столе — только подложка для стеклянных меню
@@ -301,11 +353,13 @@ public class BgView extends View {
     }
 
     /** Картинка на весь холст с обрезкой по центру. */
-    private void cover(Canvas c, Bitmap b, int w, int h) {
+    private void cover(Canvas c, Bitmap b, int w, int h) { cover(c, b, w, h, 255); }
+
+    private void cover(Canvas c, Bitmap b, int w, int h, int alpha) {
         float sc = Math.max(w / (float) b.getWidth(), h / (float) b.getHeight());
         m.setScale(sc, sc);
         m.postTranslate((w - b.getWidth() * sc) / 2f, (h - b.getHeight() * sc) / 2f);
-        p.setAlpha(255);
+        p.setAlpha(alpha);
         p.setColorFilter(satFilter());
         c.drawBitmap(b, m, p);
         p.setColorFilter(null);
@@ -324,7 +378,12 @@ public class BgView extends View {
         if (image()) {
             c.drawColor(0xFF07050B);
             if (backdrop != null) {
-                cover(c, backdrop, w, h);
+                if (prevBackdrop != null && fade < 1f) {        // смена картинки: прежняя остаётся снизу, новая проявляется сверху
+                    cover(c, prevBackdrop, w, h);
+                    cover(c, backdrop, w, h, Math.round(255 * fade));
+                } else {
+                    cover(c, backdrop, w, h);
+                }
                 drawDim(c, w, h);       // затемнение задаёт пользователь
             }
             return;

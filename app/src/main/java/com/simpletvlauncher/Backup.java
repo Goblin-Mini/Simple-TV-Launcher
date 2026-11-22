@@ -151,7 +151,7 @@ public final class Backup {
             if (mode == 1 && !jpg) bg += L.t(" (файла нет)");
             if (mode == 2 && !mp4) bg += L.t(" (файла нет)");
             int cols = root.has("cols") ? root.getJSONObject("cols").optInt("v", 7) : 7;
-            cols = Math.max(6, Math.min(10, cols));
+            cols = Math.max(4, Math.min(10, cols));
             it.bg = L.t("Фон: ") + bg;
             it.grid = L.t("Сетка: ") + cols + L.t(" в ряду");
         } catch (Throwable t) {

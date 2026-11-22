@@ -14,9 +14,21 @@ public class Prefs {
     public static final int[] THEME_COLORS = {0xFF9B2F7D, 0xFF2F6FB0, 0xFF2E9B6B, 0xFF6B6B6B, 0xFFC4572F, 0xFF4F46C8, 0xFF9C2A3A, 0xFF1F9AA8};
 
     private final SharedPreferences sp;
+    private final Context ctx;
 
     public Prefs(Context c) {
-        sp = c.getApplicationContext().getSharedPreferences("glasstv", Context.MODE_PRIVATE);
+        ctx = c.getApplicationContext();
+        sp = ctx.getSharedPreferences("glasstv", Context.MODE_PRIVATE);
+        // Кнопка источника сигнала теперь по умолчанию зависит от наличия HDMI-входов. Тем, кто обновился с прошлой версии
+        // и ничего не меняло, кнопка остаётся видимой, как и была.
+        if (!sp.contains("srcInit")) {
+            SharedPreferences.Editor e = sp.edit().putBoolean("srcInit", true);
+            try {
+                android.content.pm.PackageInfo pi = ctx.getPackageManager().getPackageInfo(ctx.getPackageName(), 0);
+                if (pi.lastUpdateTime - pi.firstInstallTime > 60000L && !sp.contains("srcHide")) e.putBoolean("srcHide", false);
+            } catch (Throwable ignored) {}
+            e.apply();
+        }
         if (sp.contains("ambBlur")) sp.edit().remove("ambPat").remove("ambPat2").remove("ambPat3").remove("ambSpeed").remove("ambBlur").apply();    // настройки удалённого режима «Эмбиент»
         syncUnits();
     }
@@ -53,14 +65,73 @@ public class Prefs {
     /** Открывать лаунчер при включении ТВ (по умолчанию да). */
     public boolean bootHome() { return sp.getBoolean("bootHome", true); }
     public void setBootHome(boolean v) { sp.edit().putBoolean("bootHome", v).apply(); }
-    public int cols() { return Math.max(6, Math.min(10, sp.getInt("cols", 7))); }
+    /** Приложение, которое запускается при включении устройства (пакет; пусто — не запускать). */
+    public String autoApp() { return sp.getString("autoApp", ""); }
+    public void setAutoApp(String v) { sp.edit().putString("autoApp", v).apply(); }
+    /** На какой загрузке устройства автозапуск уже отработал (повторный старт лаунчера на той же загрузке его не повторяет). */
+    public String autoBootDone() { return sp.getString("autoBootDone", ""); }
+    public void setAutoBootDone(String v) { sp.edit().putString("autoBootDone", v).apply(); }
+    public int cols() { return Math.max(4, Math.min(10, sp.getInt("cols", 7))); }
     public void setCols(int v) { sp.edit().putInt("cols", v).apply(); }
 
     public String vpnPkg() { return sp.getString("vpnPkg", ""); }
     public void setVpnPkg(String v) { sp.edit().putString("vpnPkg", v).apply(); }
-    /** Кнопка выбора источника сигнала показывается по умолчанию; её можно скрыть. */
-    public boolean showSourceBtn() { return !sp.getBoolean("srcHide", false); }
+    /**
+     * Кнопка выбора источника сигнала. Пока пользователь не выбрал сам, она видна только там, где есть HDMI-входы
+     * (на телевизорах); на приставках, у которых портов нет, скрыта.
+     */
+    public boolean showSourceBtn() {
+        if (sp.contains("srcHide")) return !sp.getBoolean("srcHide", false);
+        return hasHdmiInput(ctx);
+    }
     public void setShowSourceBtn(boolean v) { sp.edit().putBoolean("srcHide", !v).apply(); }
+
+    private static long hdmiAt;
+    private static boolean hdmiVal;
+
+    /** Есть ли у устройства HDMI-вход (телевизор). Результат запоминается; «нет» перепроверяется раз в минуту — вход мог ещё не успеть появиться при загрузке. */
+    static boolean hasHdmiInput(Context c) {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (hdmiAt != 0 && (hdmiVal || now - hdmiAt < 60000L)) return hdmiVal;
+        boolean r = false;
+        try {
+            android.media.tv.TvInputManager m = (android.media.tv.TvInputManager) c.getSystemService(Context.TV_INPUT_SERVICE);
+            if (m != null) for (android.media.tv.TvInputInfo i : m.getTvInputList()) {
+                if (i.getType() == android.media.tv.TvInputInfo.TYPE_HDMI) { r = true; break; }
+            }
+        } catch (Throwable ignored) {}
+        hdmiAt = now;
+        hdmiVal = r;
+        return r;
+    }
+
+    /** Кнопки «Все приложения» и «Лаунчер» стоят вверху, нижней панели «Настройки» нет. */
+    public boolean panelTop() { return sp.getBoolean("panelTop", false); }
+    public void setPanelTop(boolean v) { sp.edit().putBoolean("panelTop", v).apply(); }
+
+    // ---- автосмена обоев ----
+    /** Интервалы смены, секунды: 10 с (для проверки), полчаса, час, 3, 6, 12, 24, 48 часов, неделя, две недели, месяц. */
+    public static final long[] WP_SEC = {10, 1800, 3600, 10800, 21600, 43200, 86400, 172800, 604800, 1209600, 2592000};
+    public static final String[] WP_NAMES = {"10 секунд (для проверки)", "30 минут", "1 час", "3 часа", "6 часов", "12 часов", "24 часа", "48 часов", "1 неделя", "2 недели", "1 месяц"};
+    public int wpInterval() { return Math.max(0, Math.min(WP_SEC.length - 1, sp.getInt("wpInt2", 6))); }
+    public void setWpInterval(int v) { sp.edit().putInt("wpInt2", v).apply(); }
+    public long wpIntervalMs() { return WP_SEC[wpInterval()] * 1000L; }
+    /** Папка с обоями для автосмены: идентификатор папки в MediaStore и её название; пусто — автосмена выключена. */
+    public String wpBucket() { return sp.getString("wpBucket", ""); }
+    public String wpName() { return sp.getString("wpName", ""); }
+    public void setWpFolder(String bucket, String name) {
+        sp.edit().putString("wpBucket", bucket).putString("wpName", name).remove("wpSeen").remove("wpCur").apply();
+    }
+    public void clearWpFolder() { sp.edit().remove("wpBucket").remove("wpName").remove("wpSeen").remove("wpCur").apply(); }
+    /** Какие картинки папки уже были обоями в текущем круге (id через запятую) и какая стоит сейчас. */
+    public String wpSeen() { return sp.getString("wpSeen", ""); }
+    public void setWpSeen(String v) { sp.edit().putString("wpSeen", v).apply(); }
+    public long wpCur() { return sp.getLong("wpCur", -1); }
+    public void setWpCur(long v) { sp.edit().putLong("wpCur", v).apply(); }
+    public long wpLast() { return sp.getLong("wpLast", 0); }
+    public void setWpLast(long v) { sp.edit().putLong("wpLast", v).apply(); }
+    /** Автосмена работает: папка выбрана и тип фона «Изображение». */
+    public boolean wpActive() { return !wpBucket().isEmpty() && bgMode() == 1; }
 
     /** Файловый менеджер для кнопки флешки (пакет); пусто — спросить при нажатии. */
 

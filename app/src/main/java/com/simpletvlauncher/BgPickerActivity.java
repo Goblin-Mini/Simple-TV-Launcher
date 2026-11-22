@@ -41,21 +41,26 @@ public class BgPickerActivity extends Activity {
     private final List<Img> all = new ArrayList<>();
     private String bucket = null;
     private boolean video;
+    /** Режим выбора папки с обоями для автосмены: вместо картинок показан список папок внутренней памяти. */
+    private boolean folders;
+    private static class Folder { String id, name; int n; }
+    private final List<Folder> folderList = new ArrayList<>();
 
     @Override protected void onCreate(Bundle b) {
         super.onCreate(b);
         prefs = new Prefs(this);
         video = getIntent().getBooleanExtra("video", false);
+        folders = !video && getIntent().getBooleanExtra("folders", false);
         s = UI.scale(this);
         int W = getResources().getDisplayMetrics().widthPixels, H = getResources().getDisplayMetrics().heightPixels;
         FrameLayout root = new FrameLayout(this);
         root.addView(new BgView(this, prefs.settingsAccent()), new FrameLayout.LayoutParams(-1, -1));
-        TextView title = UI.text(this, video ? L.t("Фон: выберите видео (mp4)") : L.t("Фон: выберите изображение"), 54 * s, 0xFFFFFFFF, GlassView.MED);
+        TextView title = UI.text(this, folders ? L.t("Автосмена обоев: выберите папку") : video ? L.t("Фон: выберите видео (mp4)") : L.t("Фон: выберите изображение"), 54 * s, 0xFFFFFFFF, GlassView.MED);
         FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(Math.round(W - 192 * s), Math.round(80 * s));
         tl.leftMargin = Math.round(96 * s);
         tl.topMargin = Math.round(50 * s);
         root.addView(title, tl);
-        sub = UI.text(this, video ? L.t("Показаны недавние видео из памяти приставки") : L.t("Показаны недавние изображения из памяти приставки"), 26 * s, 0xA6FFFFFF, GlassView.REG);
+        sub = UI.text(this, folders ? L.t("Папка должна лежать во внутренней памяти устройства. Не удаляйте её, пока включена автосмена") : video ? L.t("Показаны недавние видео из памяти приставки") : L.t("Показаны недавние изображения из памяти приставки"), 26 * s, 0xA6FFFFFF, GlassView.REG);
         FrameLayout.LayoutParams sl = new FrameLayout.LayoutParams(Math.round(W - 192 * s), Math.round(40 * s));
         sl.leftMargin = Math.round(96 * s);
         sl.topMargin = Math.round(132 * s);
@@ -74,15 +79,85 @@ public class BgPickerActivity extends Activity {
         setContentView(root);
 
         String perm = Build.VERSION.SDK_INT >= 33 ? (video ? Manifest.permission.READ_MEDIA_VIDEO : Manifest.permission.READ_MEDIA_IMAGES) : Manifest.permission.READ_EXTERNAL_STORAGE;
-        if (checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED) load();
+        if (checkSelfPermission(perm) == PackageManager.PERMISSION_GRANTED) start();
         else requestPermissions(new String[]{perm}, REQ_PERM);
+    }
+
+    private void start() { if (folders) loadFolders(); else load(); }
+
+    /** Папки внутренней памяти с изображениями и число картинок в каждой. */
+    private void loadFolders() {
+        Weather.IO.execute(() -> {
+            java.util.LinkedHashMap<String, Folder> m = new java.util.LinkedHashMap<>();
+            try (Cursor c = getContentResolver().query(Bg.imagesUri(),
+                    new String[]{MediaStore.MediaColumns.BUCKET_ID, MediaStore.MediaColumns.BUCKET_DISPLAY_NAME}, null, null, null)) {
+                while (c != null && c.moveToNext()) {
+                    String id = c.getString(0);
+                    if (id == null) continue;
+                    Folder f = m.get(id);
+                    if (f == null) {
+                        f = new Folder();
+                        f.id = id;
+                        f.name = c.getString(1) == null ? L.t("Без папки") : c.getString(1);
+                        m.put(id, f);
+                    }
+                    f.n++;
+                }
+            } catch (Throwable ignored) {}
+            final List<Folder> l = new ArrayList<>(m.values());
+            java.util.Collections.sort(l, (a, b) -> a.name.compareToIgnoreCase(b.name));
+            runOnUiThread(() -> { folderList.clear(); folderList.addAll(l); populateFolders(); });
+        });
+    }
+
+    private void populateFolders() {
+        col.removeAllViews();
+        if (!prefs.wpBucket().isEmpty()) {
+            GlassView off = row(L.t("Выключить автосмену"), Icons.IMAGE);
+            off.setOnClickListener(v -> {
+                prefs.clearWpFolder();
+                Toast.makeText(this, L.t("Автосмена обоев выключена"), Toast.LENGTH_SHORT).show();
+                finish();
+            });
+        }
+        for (final Folder f : folderList) {
+            GlassView r = row(f.name + " (" + f.n + ")", Icons.LIST);
+            r.setOnClickListener(v -> pickFolder(f));
+        }
+        if (folderList.isEmpty()) {
+            TextView t = UI.text(this, L.t("Папки с изображениями не найдены"), 30 * s, 0x99FFFFFF, GlassView.REG);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.round(70 * s));
+            lp.leftMargin = Math.round(16 * s);
+            col.addView(t, lp);
+        } else {
+            col.getChildAt(0).requestFocus();
+        }
+    }
+
+    private void pickFolder(final Folder f) {
+        if (f.n < 2) { Toast.makeText(this, L.t("В папке должно быть минимум 2 изображения"), Toast.LENGTH_SHORT).show(); return; }
+        Toast.makeText(this, L.t("Применяю фон…"), Toast.LENGTH_SHORT).show();
+        Weather.IO.execute(() -> {
+            prefs.setWpFolder(f.id, f.name);
+            prefs.setBgMode(1);
+            SoftVideo.forget(this);
+            final boolean ok = Bg.wpNext(this, prefs);       // первые обои из папки ставятся сразу
+            if (!ok) prefs.clearWpFolder();
+            runOnUiThread(() -> {
+                Toast.makeText(this, ok ? L.t("Автосмена обоев включена") : L.t("Не удалось прочитать файл"), Toast.LENGTH_SHORT).show();
+                if (ok) finish();
+            });
+        });
     }
 
     @Override public void onRequestPermissionsResult(int code, String[] p, int[] r) {
         super.onRequestPermissionsResult(code, p, r);
         if (code == REQ_PERM) {
-            if (r.length > 0 && r[0] == PackageManager.PERMISSION_GRANTED) load();
-            else { sub.setText(L.t("Нет доступа к памяти. Разрешите доступ или используйте системный выбор файла.")); populate(); }
+            if (r.length > 0 && r[0] == PackageManager.PERMISSION_GRANTED) start();
+            else {
+                sub.setText(L.t("Нет доступа к памяти. Разрешите доступ или используйте системный выбор файла."));
+                if (folders) populateFolders(); else populate();
+            }
         }
     }
 
@@ -128,6 +203,7 @@ public class BgPickerActivity extends Activity {
             GlassView sys = row(L.t("Системный выбор файла…"), Icons.IMAGE);
             sys.setOnClickListener(v -> startActivityForResult(get, REQ_PICK));
         }
+        final int hdr = col.getChildCount();        // строки над картинками (папка, системный выбор)
         List<Img> shown = new ArrayList<>();
         for (Img i : all) if (bucket == null || bucket.equals(i.bucket)) { shown.add(i); if (shown.size() >= LIMIT) break; }
         if (shown.isEmpty()) {
@@ -161,8 +237,9 @@ public class BgPickerActivity extends Activity {
             if (img.thumb == null) toLoad.add(img);
         }
         loadThumbs(toLoad, Math.round(tw));
-        if (col.getChildCount() > 2) col.getChildAt(2).requestFocus(); else col.getChildAt(0).requestFocus();
+        if (col.getChildCount() > hdr) col.getChildAt(hdr).requestFocus(); else col.getChildAt(0).requestFocus();
     }
+
 
     private void paintThumb(Canvas c, GlassView v, Img img) {
         int w = v.getWidth(), h = v.getHeight();
@@ -175,8 +252,7 @@ public class BgPickerActivity extends Activity {
             c.drawBitmap(b, 0, 0, v.tp);
             c.restore();
         }
-        v.text(c, img.name == null ? "" : img.name, w / 2f, h * 0.94f, h * 0.09f, 0xFFFFFFFF, 1, Paint.Align.CENTER, w * 0.94f);
-    }
+        v.text(c, img.name == null ? "" : img.name, w / 2f, h * 0.94f, h * 0.09f, 0xFFFFFFFF, 1, Paint.Align.CENTER, w * 0.94f);    }
 
     private void loadThumbs(final List<Img> list, final int width) {
         Weather.IO.execute(() -> {

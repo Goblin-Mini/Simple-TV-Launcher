@@ -142,6 +142,96 @@ public final class Bg {
 
     /** Копирует выбранную картинку (уменьшив до 1920 по длинной стороне). Вызывать в фоне. */
     public static boolean setImage(Context ctx, Uri uri) {
+        boolean ok = saveImage(ctx, uri, file(ctx.getApplicationContext()));
+        if (ok) CACHE.clear();
+        return ok;
+    }
+
+    // ---- автосмена обоев: обои берутся по очереди из выбранной папки внутренней памяти (через MediaStore), копий картинок не хранится ----
+    static Uri imagesUri() {
+        return android.os.Build.VERSION.SDK_INT >= 29
+                ? android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)     // только внутренняя память
+                : android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+    }
+
+    static boolean canReadImages(Context c) {
+        String perm = android.os.Build.VERSION.SDK_INT >= 33 ? android.Manifest.permission.READ_MEDIA_IMAGES : android.Manifest.permission.READ_EXTERNAL_STORAGE;
+        return c.checkSelfPermission(perm) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** Номера всех картинок папки (MediaStore _ID). */
+    private static java.util.List<Long> folderIds(Context c, String bucket) {
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        try (android.database.Cursor q = c.getContentResolver().query(imagesUri(), new String[]{android.provider.MediaStore.MediaColumns._ID},
+                android.provider.MediaStore.MediaColumns.BUCKET_ID + "=?", new String[]{bucket}, android.provider.MediaStore.MediaColumns._ID)) {
+            while (q != null && q.moveToNext()) ids.add(q.getLong(0));
+        } catch (Throwable ignored) {}
+        return ids;
+    }
+
+    /** Сколько картинок в папке (для проверки при выборе). */
+    public static int wpFolderSize(Context ctx, String bucket) { return folderIds(ctx.getApplicationContext(), bucket).size(); }
+
+    private static java.util.Set<Long> parseIds(String s) {
+        java.util.Set<Long> r = new java.util.HashSet<>();
+        for (String x : s.split(",")) if (!x.isEmpty()) { try { r.add(Long.parseLong(x)); } catch (NumberFormatException ignored) {} }
+        return r;
+    }
+
+    private static String joinIds(java.util.Set<Long> s) {
+        StringBuilder b = new StringBuilder();
+        for (Long x : s) { if (b.length() > 0) b.append(','); b.append(x); }
+        return b.toString();
+    }
+
+    /** Картинка становится обоем: уменьшается до 1920 и записывается в bg.jpg (через временный файл, чтобы не отдать недописанный). */
+    private static boolean applyUri(Context c, Uri u) {
+        File tmp = new File(c.getFilesDir(), "bg.jpg.tmp"), dst = file(c);
+        if (!saveImage(c, u, tmp)) { tmp.delete(); return false; }
+        dst.delete();
+        boolean ok = tmp.renameTo(dst);
+        CACHE.clear();
+        return ok;
+    }
+
+    /**
+     * Следующие обои из папки: случайная картинка, которая в этом круге ещё не показывалась. Когда показаны все —
+     * круг начинается заново (последняя картинка круга сразу не повторяется). Новые картинки в папке подхватываются сами.
+     * Вызывать в фоне. true — обои сменились.
+     */
+    public static synchronized boolean wpNext(Context ctx, Prefs pr) {
+        Context c = ctx.getApplicationContext();
+        String bucket = pr.wpBucket();
+        if (bucket.isEmpty()) return false;
+        pr.setWpLast(System.currentTimeMillis());          // отсчёт заново в любом случае, чтобы при сбое не повторять попытку без конца
+        if (!canReadImages(c)) return false;
+        java.util.List<Long> ids = folderIds(c, bucket);
+        if (ids.size() < 2) return false;                  // папку удалили или в ней почти ничего нет — текущие обои остаются
+        java.util.Set<Long> seen = parseIds(pr.wpSeen());
+        seen.retainAll(ids);                               // удалённые из папки картинки из памяти убираем
+        long cur = pr.wpCur();
+        if (cur >= 0 && ids.contains(cur)) seen.add(cur);
+        java.util.List<Long> cand = new java.util.ArrayList<>();
+        for (Long id : ids) if (!seen.contains(id)) cand.add(id);
+        if (cand.isEmpty()) {                              // круг пройден
+            seen.clear();
+            if (cur >= 0 && ids.contains(cur)) seen.add(cur);
+            for (Long id : ids) if (!seen.contains(id)) cand.add(id);
+        }
+        java.util.Random rnd = new java.util.Random();
+        boolean ok = false;
+        while (!ok && !cand.isEmpty()) {
+            long id = cand.remove(rnd.nextInt(cand.size()));
+            seen.add(id);
+            ok = applyUri(c, android.content.ContentUris.withAppendedId(imagesUri(), id));     // файл не читается — берём другой
+            if (ok) pr.setWpCur(id);
+        }
+        pr.setWpSeen(joinIds(seen));
+        return ok;
+    }
+
+
+    private static boolean saveImage(Context ctx, Uri uri, File dst) {
         try {
             Context c = ctx.getApplicationContext();
             BitmapFactory.Options o = new BitmapFactory.Options();
@@ -163,11 +253,10 @@ public final class Bg {
                 bmp.recycle();
                 bmp = s2;
             }
-            FileOutputStream out = new FileOutputStream(file(c));
+            FileOutputStream out = new FileOutputStream(dst);
             bmp.compress(Bitmap.CompressFormat.JPEG, 90, out);
             out.close();
             bmp.recycle();
-            CACHE.clear();
             return true;
         } catch (Throwable t) {
             return false;
