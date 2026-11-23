@@ -2,7 +2,10 @@ package com.simpletvlauncher;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
@@ -30,6 +33,7 @@ public class HomeKeyService extends AccessibilityService {
     private boolean bootRun, polling;
     private long pollStart;
     private SharedPreferences.OnSharedPreferenceChangeListener prefL;
+    private BroadcastReceiver wakeRx;
 
     private void setPolling(boolean v) {
         if (polling == v) return;
@@ -80,6 +84,18 @@ public class HomeKeyService extends AccessibilityService {
             // переключили «Домой» в настройках лаунчера — фильтр клавиш включается или выключается сразу
             prefL = (sp, key) -> { if ("homeKey".equals(key)) updateKeyFilter(); };
             prefs.raw().registerOnSharedPreferenceChangeListener(prefL);
+            // пробуждение устройства: служба живёт и пока другое приложение на экране, поэтому может открыть приложение автозапуска и тогда
+            if (wakeRx == null) {
+                wakeRx = new BroadcastReceiver() {
+                    @Override public void onReceive(Context c, Intent i) {
+                        Prefs p = new Prefs(HomeKeyService.this);
+                        final String pkg = p.autoApp();
+                        if (!p.wakeApp() || pkg.isEmpty() || Wake.afterBoot()) return;
+                        h.postDelayed(() -> Wake.openAuto(HomeKeyService.this, pkg), 1500);
+                    }
+                };
+                registerReceiver(wakeRx, new IntentFilter(Intent.ACTION_SCREEN_ON));
+            }
             if (!prefs.bootHome() || bootRun) return;
             if (SystemClock.elapsedRealtime() > BOOT_WINDOW_MS) return;
             int boot = -1;
@@ -96,6 +112,8 @@ public class HomeKeyService extends AccessibilityService {
     @Override public boolean onUnbind(Intent i) {
         h.removeCallbacksAndMessages(null);
         try { if (prefL != null) new Prefs(this).raw().unregisterOnSharedPreferenceChangeListener(prefL); } catch (Throwable ignored) {}
+        try { if (wakeRx != null) unregisterReceiver(wakeRx); } catch (Throwable ignored) {}
+        wakeRx = null;
         return super.onUnbind(i);
     }
 

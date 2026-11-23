@@ -21,8 +21,7 @@ public class SettingsActivity extends Activity {
     private float s;
     private LinearLayout col;
     private final List<Runnable> refreshers = new ArrayList<>();
-    private GlassView cityRow, modeRow, sourceRow;
-    private android.view.View weatherHdr;
+    private GlassView modeRow;
     private ScrollView scroll;
     private boolean weatherFocus;
 
@@ -37,7 +36,7 @@ public class SettingsActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         bgView = new BgView(this, prefs.settingsAccent());
         root.addView(bgView, new FrameLayout.LayoutParams(-1, -1));
-        TextView title = UI.text(this, L.t("Настройки лаунчера"), 58 * s, 0xFFFFFFFF, GlassView.MED);
+        TextView title = titleTv = UI.text(this, L.t("Настройки лаунчера"), 58 * s, 0xFFFFFFFF, GlassView.MED);
         FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(Math.round(W - 192 * s), Math.round(80 * s));
         tl.leftMargin = Math.round(96 * s);
         tl.topMargin = Math.round(50 * s);
@@ -58,45 +57,116 @@ public class SettingsActivity extends Activity {
         setContentView(root);
         rootView = root;
 
+        // из виджета погоды настройки открываются сразу в разделе «Погода», иначе — на списке разделов
+        page = getIntent().getIntExtra("page", weatherFocus ? P_WEATHER : 0);
         build();
-        if (weatherFocus && sourceRow != null) {
-            // раздел «Погода» стоит вверху экрана, выбран его первый пункт «Источник погоды»
-            sourceRow.requestFocus();
-            scroll.postDelayed(() -> { if (weatherHdr != null) scroll.scrollTo(0, Math.max(0, weatherHdr.getTop() - Math.round(8 * s))); }, 120);
-        }
-
-        else if (col.getChildCount() > 1) col.getChildAt(1).requestFocus();
+        if (col.getChildCount() > 0) col.getChildAt(0).requestFocus();
     }
 
-    /** Список строк зависит от выбранного режима фона, поэтому собирается заново при его смене. */
+    private static final int P_HOME = 1, P_BG = 2, P_WEATHER = 3, P_SAFE = 4, P_BACKUP = 5, P_SYS = 6, P_COUNT = 6;
+    private int page;                      // 0 — список разделов, иначе номер раздела
+    private TextView titleTv;
+    private final List<GlassView> menuRows = new ArrayList<>();
+
+    private String pageName(int p) {
+        switch (p) {
+            case P_HOME: return L.t("Главный экран и сторонние интеграции");
+            case P_BG: return L.t("Дизайн");
+            case P_WEATHER: return L.t("Погода");
+            case P_SAFE: return L.t("Защита");
+            case P_BACKUP: return L.t("Резервное копирование");
+            case P_SYS: return L.t("Системные настройки");
+            default: return L.t("Настройки лаунчера");
+        }
+    }
+
+    /** Настройки разбиты на разделы: сначала список разделов, внутри — их строки. Список строк собирается заново при смене раздела и режима фона. */
     private void build() {
         col.removeAllViews();
         refreshers.clear();
-        int mode = prefs.bgMode();
+        menuRows.clear();
+        titleTv.setText(pageName(page));
+        switch (page) {
+            case P_HOME: buildHome(); break;
+            case P_BG: buildBg(); break;
+            case P_WEATHER: buildWeather(); break;
+            case P_SAFE: buildSafe(); break;
+            case P_BACKUP: buildBackup(); break;
+            case P_SYS: buildSys(); break;
+            default:
+                for (int i = 1; i <= P_COUNT; i++) {
+                    final int p = i;
+                    menuRows.add(row(pageName(i), () -> "", () -> openPage(p)));
+                }
+        }
+        refresh();
+    }
 
-        section(L.t("Внешний вид"));
+    private void openPage(int p) {
+        page = p;
+        build();
+        scroll.scrollTo(0, 0);
+        if (col.getChildCount() > 0) col.getChildAt(0).requestFocus();
+    }
 
+    @Override public void onBackPressed() {
+        if (page == 0) { super.onBackPressed(); return; }
+        int p = page;
+        page = 0;
+        build();
+        scroll.scrollTo(0, 0);
+        if (p <= menuRows.size()) menuRows.get(p - 1).requestFocus();      // фокус возвращается на только что закрытый раздел
+    }
+
+    /** Тонкая разделительная линия между группами строк. */
+    private void divider() {
+        android.view.View v = new android.view.View(this);
+        v.setBackgroundColor(0x2EFFFFFF);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.max(1, Math.round(2 * s)));
+        lp.topMargin = Math.round(8 * s);
+        lp.bottomMargin = Math.round(18 * s);
+        lp.leftMargin = Math.round(28 * s);
+        lp.rightMargin = Math.round(28 * s);
+        col.addView(v, lp);
+    }
+
+    private void buildHome() {
         row(L.t("Язык приложения"), this::langLabel, this::askLang);
+        row(L.t("Формат времени"), () -> prefs.clock12() ? L.t("12 часов") : L.t("24 часа"), () -> prefs.setClock12(!prefs.clock12()));
+        divider();
+        slider(L.t("Приложений в ряду"), 4, 10, 1, prefs::cols, prefs::setCols, "");
         toggle(L.t("Показывать дату и день недели"), prefs::showDate, prefs::setShowDate);
+        toggle(L.t("Отображать название выбранного приложения"), prefs::showTitle, prefs::setShowTitle);
+        toggle(L.t("Отображать подписи категорий"), prefs::showHdrs, prefs::setShowHdrs);
         toggle(L.t("Кнопка поиска вверху"), prefs::showSearchBtn, prefs::setShowSearchBtn);
         toggle(L.t("Кнопка выбора источника сигнала"), prefs::showSourceBtn, prefs::setShowSourceBtn);
         toggle(L.t("Значок VPN вверху"), prefs::showVpnBtn, prefs::setShowVpnBtn);
         toggle(L.t("Значок сети вверху"), prefs::showNetBtn, prefs::setShowNetBtn);
         toggle(L.t("Шестерня системных настроек вверху"), prefs::showGearBtn, prefs::setShowGearBtn);
-        toggle(L.t("Виджет погоды"), prefs::showWeather, prefs::setShowWeather);
         toggle(L.t("Кнопки настроек вверху вместо нижней панели"), prefs::panelTop, prefs::setPanelTop);
+        divider();
+        row(L.t("Клиент для VPN"), () -> vpnLabel(), this::askVpn);
+        row(L.t("Приложение для поиска"), () -> searchLabel(), this::askSearch);
+        divider();
+        row(L.t("Показать все скрытые приложения"), () -> prefs.hidden().size() + L.t(" скрыто"), this::askShowAll);
+        row(L.t("Сбросить порядок плиток (по алфавиту)"), () -> "", this::askResetOrder);
+    }
 
-        section(L.t("Фон главного экрана"));
-        modeRow = row(L.t("Тип фона"), () -> L.t(Prefs.BG_MODES[prefs.bgMode()]), this::askMode);
+    private void buildBg() {
+        int mode = prefs.bgMode();
+        modeRow = row(L.t("Тип заднего фона"), () -> L.t(Prefs.BG_MODES[prefs.bgMode()]), this::askMode);
         if (mode == 0) {
             row(L.t("Цвет градиента"), () -> L.t(Prefs.THEME_NAMES[prefs.theme()]), this::askColor);
         } else if (mode == 1) {
             row(L.t("Выбрать изображение"), () -> Bg.has(this) ? L.t("задано") : L.t("не задано"), () ->
                     startActivity(new Intent(this, BgPickerActivity.class)));
-            row(L.t("Автосмена обоев: папка"), () -> prefs.wpBucket().isEmpty() ? L.t("Выкл") : prefs.wpName(), () ->
+            wpRow = row(L.t("Автосмена обоев: папка"), () -> prefs.wpBucket().isEmpty() ? L.t("Выкл") : prefs.wpName(), () ->
                     startActivity(new Intent(this, BgPickerActivity.class).putExtra("folders", true)));
-            row(L.t("Интервал смены обоев"), () -> L.t(Prefs.WP_NAMES[prefs.wpInterval()]), this::askWpInterval);
-            row(L.t("Следующее изображение"), () -> "", this::nextWallpaper);
+            wpShown = prefs.wpActive();
+            if (wpShown) {
+                row(L.t("Интервал смены обоев"), () -> L.t(Prefs.WP_NAMES[prefs.wpInterval()]), this::askWpInterval);
+                row(L.t("Следующее изображение"), () -> "", this::nextWallpaper);
+            }
             slider(L.t("Затемнение"), 0, 80, 10, prefs::bgDim, prefs::setBgDim, " %");
             slider(L.t("Насыщенность"), 0, 100, 10, prefs::bgSat, prefs::setBgSat, " %");
             slider(L.t("Размытие"), 0, 100, 10, prefs::bgBlur, prefs::setBgBlur, " %");
@@ -106,51 +176,41 @@ public class SettingsActivity extends Activity {
             slider(L.t("Затемнение"), 0, 80, 10, prefs::bgDim, prefs::setBgDim, " %");
             slider(L.t("Насыщенность"), 0, 100, 10, prefs::bgSat, prefs::setBgSat, " %");
         }
-        section(L.t("Сетка приложений"));
-        slider(L.t("Приложений в ряду"), 4, 10, 1, prefs::cols, prefs::setCols, "");
-
-        section(L.t("Подключения"));
-        row(L.t("Клиент для VPN"), () -> vpnLabel(), this::askVpn);
-        row(L.t("Приложение для поиска"), () -> searchLabel(), this::askSearch);
-
-        section(L.t("Погода"));
-        weatherHdr = col.getChildAt(col.getChildCount() - 1);
-        sourceRow = row(L.t("Источник погоды"), () -> prefs.providerName(), this::askProvider);
-        row(L.t("Единицы измерения"), () -> unitsLabel(), this::askUnits);
-        cityRow = row(L.t("Город"), () -> prefs.hasLocation() ? prefs.city() : L.t("не выбран"), this::askCity);
-        row(L.t("Обновить погоду сейчас"), () -> "", this::refreshWeather);
-        row(L.t("Сбросить данные погоды"), () -> "", () -> { prefs.clearWeather(); toast(L.t("Кэш погоды очищен")); });
-
-        section(L.t("Приложения"));
-        row(L.t("Показать все скрытые приложения"), () -> prefs.hidden().size() + L.t(" скрыто"), this::askShowAll);
-        row(L.t("Сбросить порядок (по алфавиту)"), () -> "", this::askResetOrder);
-
-        section(L.t("Защита"));
-        row(L.t("Родительский контроль"), () -> prefs.hasPin() ? L.t("PIN-код задан") : L.t("не задан"), this::askParental);
-        toggle(L.t("Режим для бабушек"), prefs::kid, v -> { prefs.setKid(v); if (v) showKidInfo(); });
-
-        section(L.t("Резервная копия"));
-        row(L.t("Создать резервную копию"), () -> L.t("в «Загрузки»"), this::doBackup);
-        row(L.t("Восстановить из копии"), () -> "", this::askRestore);
-
-        section(L.t("Система"));
-        row(L.t("Сменить лаунчер по умолчанию"), () -> "", () -> { prepareVeil(); awaitHome = true; if (rootView != null) rootView.postDelayed(() -> awaitHome = false, 6000); UI.action(this, Settings.ACTION_HOME_SETTINGS); });
-        // оба пункта включены по умолчанию, но без доступа к спецвозможностям не работают — пока он нужен, но не получен, рядом с «Вкл» жёлтый «!»
-        warn(row(L.t("Кнопка домой ведёт в Simple TV Launcher (нужны спецвозможности)"), () -> prefs.homeKey() ? L.t("Вкл") : L.t("Выкл"), () -> prefs.setHomeKey(!prefs.homeKey())), prefs::homeKey);
-        warn(row(L.t("Автозапуск лаунчера при включении ТВ (нужны спецвозможности)"), () -> prefs.bootHome() ? L.t("Вкл") : L.t("Выкл"), () -> prefs.setBootHome(!prefs.bootHome())), prefs::bootHome);
-        row(L.t("Приложение при включении ТВ"), this::autoLabel, this::askAutoApp);
-        final GlassView access = row(L.t("Доступ к спецвозможностям"), () -> HomeFix.isOn(this) ? L.t("Получен") : L.t("Отсутствует"), () -> HomeFix.showHelp(this, this::refresh));
-        refreshers.add(() -> { access.tint = HomeFix.needed(this) ? 0x70FFB020 : 0; access.invalidate(); });     // подсвечена, пока доступ нужен, но не получен
-        row("Simple TV Launcher", () -> L.t("версия ") + versionName(), this::showAbout);
-        refresh();
     }
 
-    private void section(String name) {
-        TextView t = UI.text(this, name, 28 * s, 0x99FFFFFF, GlassView.MED);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, Math.round(60 * s));
-        lp.topMargin = Math.round(14 * s);
-        lp.leftMargin = Math.round(16 * s);
-        col.addView(t, lp);
+    private void buildWeather() {
+        toggle(L.t("Виджет погоды на главном экране"), prefs::showWeather, prefs::setShowWeather);
+        row(L.t("Источник погоды"), () -> prefs.providerName(), this::askProvider);
+        row(L.t("Единицы измерения"), () -> unitsLabel(), this::askUnits);
+        row(L.t("Город"), () -> prefs.hasLocation() ? prefs.city() : L.t("не выбран"), this::askCity);
+        row(L.t("Обновить погоду сейчас"), () -> "", this::refreshWeather);
+        row(L.t("Сбросить данные погоды"), () -> "", () -> { prefs.clearWeather(); toast(L.t("Кэш погоды очищен")); });
+    }
+
+    private void buildSafe() {
+        row(L.t("Родительский контроль"), () -> prefs.hasPin() ? L.t("PIN-код задан") : L.t("не задан"), this::askParental);
+        toggle(L.t("Режим для бабушек"), prefs::kid, v -> { prefs.setKid(v); if (v) showKidInfo(); });
+    }
+
+    private void buildBackup() {
+        row(L.t("Создать резервную копию"), () -> L.t("в «Загрузки»"), this::doBackup);
+        row(L.t("Восстановить из копии"), () -> "", this::askRestore);
+    }
+
+    private void buildSys() {
+        row(L.t("Сменить лаунчер по умолчанию"), () -> "", () -> { prepareVeil(); awaitHome = true; if (rootView != null) rootView.postDelayed(() -> awaitHome = false, 6000); UI.action(this, Settings.ACTION_HOME_SETTINGS); });
+        row(L.t("Принудительно назначить Simple TV Launcher главным (через ADB или Root)"), () -> "", this::showForceHome);
+        divider();
+        // оба пункта включены по умолчанию, но без доступа к спецвозможностям не работают — пока он нужен, но не получен, рядом с «Вкл» жёлтый «!»
+        warn(row(L.t("Кнопка домой ведёт в Simple TV Launcher (нужны спецвозможности)"), () -> prefs.homeKey() ? L.t("Вкл") : L.t("Выкл"), () -> prefs.setHomeKey(!prefs.homeKey())), prefs::homeKey);
+        warn(row(L.t("Автозапуск лаунчера при включении устройства (нужны спецвозможности)"), () -> prefs.bootHome() ? L.t("Вкл") : L.t("Выкл"), () -> prefs.setBootHome(!prefs.bootHome())), prefs::bootHome);
+        final GlassView access = row(L.t("Доступ к спецвозможностям"), () -> HomeFix.isOn(this) ? L.t("Получен") : L.t("Отсутствует"), () -> HomeFix.showHelp(this, this::refresh));
+        refreshers.add(() -> { access.tint = HomeFix.needed(this) ? 0x70FFB020 : 0; access.invalidate(); });     // подсвечена, пока доступ нужен, но не получен
+        divider();
+        row(L.t("Запускать выбранное приложение при включении устройства"), this::autoLabel, this::askAutoApp);
+        toggle(L.t("Запускать выбранное приложение при выходе из сна"), prefs::wakeApp, prefs::setWakeApp);
+        divider();
+        row(L.t("О приложении"), () -> L.t("версия ") + versionName(), this::showAbout);
     }
 
     interface Getter { boolean get(); }
@@ -324,8 +384,16 @@ public class SettingsActivity extends Activity {
         hideVeil();
         bgView.refresh(prefs.settingsAccent());     // например, после выбора другой картинки или видео
         bgView.syncLook();
+        // выбрали (или сбросили) папку автосмены — строки интервала и «Следующее изображение» появляются или исчезают
+        if (page == P_BG && prefs.bgMode() == 1 && prefs.wpActive() != wpShown) {
+            build();
+            if (wpRow != null) wpRow.requestFocus();
+        }
         if (!refreshers.isEmpty()) refresh();
     }
+
+    private boolean wpShown;
+    private GlassView wpRow;
 
     private String vpnLabel() {
         String p = prefs.vpnPkg();
@@ -350,11 +418,38 @@ public class SettingsActivity extends Activity {
                 String[] names = new String[apps.size() + 1];
                 names[0] = L.t("Не использовать");
                 for (int i = 0; i < apps.size(); i++) names[i + 1] = apps.get(i).label;
-                GlassDialog.menu(this, L.t("Приложение при включении ТВ"), names, i -> {
+                GlassDialog.menu(this, L.t("Запускать выбранное приложение при включении устройства"), names, i -> {
                     prefs.setAutoApp(i == 0 ? "" : apps.get(i - 1).pkg);
                     refresh();
                 }).show();
             });
+        });
+    }
+
+    private static final String SET_HOME = "cmd package set-home-activity com.simpletvlauncher/.MainActivity";
+
+    /** Инструкция по принудительному назначению лаунчера главным: ADB с компьютера или, при наличии root, прямо на ТВ. */
+    private void showForceHome() {
+        String text = L.t("Если в настройках устройства нельзя выбрать лаунчер по умолчанию, его можно назначить принудительно.")
+                + "\n\n" + L.t("ADB (включите отладку по ADB, устройство и компьютер в одной сети):")
+                + "\nadb shell " + SET_HOME
+                + "\n\n" + L.t("Если на устройстве есть root, это можно сделать без компьютера кнопкой ниже.")
+                + "\n\n" + L.t("Этот способ не панацея. Если кнопка «Домой» всё равно открывает стоковый лаунчер, нужны спецвозможности (пункт «Доступ к спецвозможностям») или отключение стокового лаунчера.");
+        GlassDialog.info(this, L.t("Назначить лаунчером по умолчанию"), text,
+                new String[]{L.t("Назначить через Root"), L.t("Закрыть")}, i -> { if (i == 0) setHomeViaRoot(); }).show();
+    }
+
+    private void setHomeViaRoot() {
+        Weather.IO.execute(() -> {
+            boolean ok = false;
+            try {
+                final Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", SET_HOME});
+                // менеджер root может ждать ответа пользователя; если его нет, не зависаем навсегда
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(p::destroy, 30000);
+                ok = p.waitFor() == 0;
+            } catch (Throwable ignored) {}
+            final boolean res = ok;
+            runOnUiThread(() -> toast(res ? L.t("Готово: Simple TV Launcher назначен главным") : L.t("Не удалось: root недоступен или команда отклонена")));
         });
     }
 
@@ -380,7 +475,7 @@ public class SettingsActivity extends Activity {
     private BgView bgView;
 
     private void askMode() {
-        GlassDialog.menu(this, L.t("Тип фона"), Prefs.tr(Prefs.BG_MODES), i -> {
+        GlassDialog.menu(this, L.t("Тип заднего фона"), Prefs.tr(Prefs.BG_MODES), i -> {
             prefs.setBgMode(i);
             if (i != 2) SoftVideo.forget(this);
             bgView.setAccent(prefs.settingsAccent());
@@ -436,6 +531,7 @@ public class SettingsActivity extends Activity {
         GlassDialog.menu(this, L.t("Язык приложения"), names, i -> {
             prefs.setLang(i == 0 ? "auto" : i == 1 ? "ru" : "en");
             L.init(this);
+            getIntent().putExtra("page", page);         // после пересоздания открывается тот же раздел
             recreate();         // экран заново строится на выбранном языке
         }).show();
     }

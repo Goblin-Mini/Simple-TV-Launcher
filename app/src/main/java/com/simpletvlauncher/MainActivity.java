@@ -40,6 +40,9 @@ public class MainActivity extends Activity {
 
     private Prefs prefs;
     private float s;
+    private int rw, rh;
+    private float clockTextW, botGap;
+    private boolean recreating;
     private int W, H;
     private float mx, gap;
     private float pitch, rowPitch, slotW, slotH, tw, th, vy;
@@ -216,10 +219,11 @@ public class MainActivity extends Activity {
         android.util.DisplayMetrics m = getResources().getDisplayMetrics();
         W = m.widthPixels;
         H = m.heightPixels;
+        screenChanged();        // запоминаем реальный размер экрана
         s = UI.scale(this);
         mx = 96 * s;
         gap = 24 * s;
-        vy = 273 * s;       // верх списка: расстояние от погоды до блока «Приложения» равно расстоянию от него до нижних кнопок
+        geom();             // верх списка (vy) и отступ до нижних кнопок зависят от того, показаны ли название и подписи категорий
 
         root = new FrameLayout(this);
         video = new VideoBg(this);
@@ -262,6 +266,7 @@ public class MainActivity extends Activity {
         setContentView(root);
         // реальная высота окна может быть меньше экрана (системные панели): прокрутка должна доходить до конца
         root.addOnLayoutChangeListener((v, l, t, r, bt, ol, ot, or, ob) -> {
+            if (!recreating && (r - l != or - ol || bt - t != ob - ot) && ol != or && screenChanged()) { recreating = true; recreate(); return; }
             int want = Math.round((bt - t) - vy);
             ViewGroup.LayoutParams lp = sv.getLayoutParams();
             if (want > 0 && lp.height != want) { lp.height = want; sv.setLayoutParams(lp); }
@@ -273,6 +278,7 @@ public class MainActivity extends Activity {
         f.addAction(Intent.ACTION_PACKAGE_REPLACED);
         f.addDataScheme("package");
         registerReceiver(pkgReceiver, f);
+        registerReceiver(screenOnRx, new IntentFilter(Intent.ACTION_SCREEN_ON));
 
         applyPrefs();
         loadApps();
@@ -293,35 +299,52 @@ public class MainActivity extends Activity {
         String id = boots != -1 ? "b" + boots : "t" + (System.currentTimeMillis() - up) / 60000L;     // номер загрузки, а если его нет — время старта системы
         if (id.equals(prefs.autoBootDone())) return;
         prefs.setAutoBootDone(id);                  // отмечаем до запуска, чтобы сбой приложения не вызвал повтор
-        h.postDelayed(() -> {
-            try {
-                Intent i = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
-                if (i == null) i = getPackageManager().getLaunchIntentForPackage(pkg);
-                if (i != null) startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            } catch (Throwable ignored) {}
-        }, 800);
+        h.postDelayed(() -> Wake.openAuto(this, pkg), 800);
+    }
+
+    // ---- выход из сна: по желанию открывается приложение автозапуска ----
+    private final BroadcastReceiver screenOnRx = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            Wake.wokeAt = android.os.SystemClock.elapsedRealtime();
+            if (resumed) wakeCheck();       // лаунчер уже на экране; иначе проверка пройдёт в onResume (если он случится сразу после пробуждения)
+        }
+    };
+
+    private void wakeCheck() {
+        long now = android.os.SystemClock.elapsedRealtime();
+        if (Wake.wokeAt == 0 || now - Wake.wokeAt > 4000 || Wake.afterBoot()) return;       // не пробуждение, а давний возврат на экран или загрузка
+        Wake.wokeAt = 0;
+        final String pkg = prefs.autoApp();
+        if (prefs.wakeApp() && !pkg.isEmpty()) h.postDelayed(() -> Wake.openAuto(this, pkg), 1500);
     }
 
     @Override protected void onDestroy() {
         super.onDestroy();
         try { unregisterReceiver(pkgReceiver); } catch (Throwable ignored) {}
-    }
-
-    @Override protected void onStop() {
-        super.onStop();
+        try { unregisterReceiver(screenOnRx); } catch (Throwable ignored) {}
     }
 
     @Override public void onConfigurationChanged(android.content.res.Configuration cfg) {
         super.onConfigurationChanged(cfg);
         L.init(this);           // язык системы сменился, а в лаунчере выбрано «Авто»
-        if (L.version != langV) recreate();
+        if (L.version != langV || screenChanged()) recreate();
+    }
+
+    /** Разрешение экрана (или плотность) изменилось, пока лаунчер жив: масштаб считается один раз при создании, поэтому экран строится заново. */
+    private boolean screenChanged() {
+        android.util.DisplayMetrics m = getResources().getDisplayMetrics();
+        android.util.DisplayMetrics r = new android.util.DisplayMetrics();
+        try { getWindowManager().getDefaultDisplay().getRealMetrics(r); } catch (Throwable t) { r = m; }
+        if (rw == 0) { rw = r.widthPixels; rh = r.heightPixels; }
+        return m.widthPixels != W || m.heightPixels != H || r.widthPixels != rw || r.heightPixels != rh;
     }
 
     @Override protected void onResume() {
         super.onResume();
         L.init(this);
-        if (L.version != langV) { recreate(); return; }      // язык сменили в настройках — экран строится заново на новом языке
+        if (L.version != langV || screenChanged()) { recreate(); return; }      // сменили язык или разрешение — экран строится заново
         resumed = true;
+        wakeCheck();
         Frost.bg = bg;      // другие экраны подменяют его своим фоном
         if (!sigOf().equals(sig)) {
             applyPrefs();
@@ -474,7 +497,7 @@ public class MainActivity extends Activity {
         th = tw * 9f / 16f;      // баннеры Android TV — 16:9
         // два ряда вместе с нижней частью обязаны помещаться без прокрутки на любом экране: при нехватке высоты плитки уменьшаются,
         // а свободная ширина уходит в интервал между ними
-        float below = prefs.panelTop() ? 34 * s + END_PAD * s : 34 * s + 60 * s + 25 * s + 46 * s + 104 * s + BOTTOM_PAD * s;
+        float below = prefs.panelTop() ? 34 * s + END_PAD * s : 34 * s + botGap + 104 * s + BOTTOM_PAD * s;
         // при самой крупной сетке (4 плитки в ряду) с нижней панелью «Настройки» без прокрутки помещается один ряд, с панелью наверху — два
         int fit = cols == 4 && !prefs.panelTop() ? 1 : 2;
         float maxTh = (H - vy - gridTop() - below - (fit - 1) * gap) / fit;
@@ -615,12 +638,25 @@ public class MainActivity extends Activity {
         notice.focusScale = 1f;
         notice.solidFocus = false;
         place(notice, W - mx - nw, 182 * s, nw, nh);
+        noticeW = nw;
+        placeNotice();
         notice.painter = (c, v) -> v.text(c, msg, v.getWidth() / 2f, v.getHeight() * 0.66f, v.getHeight() * 0.46f, 0xE6FFFFFF, 1, Paint.Align.CENTER, v.getWidth() - v.getHeight() * 0.3f);
         notice.setOnClickListener(v -> { if (!kidBlocked()) HomeFix.showHelp(this, this::updateNotice); });
         updateNotice();
     }
 
     private GlassView notice;
+    private float noticeW, frostTop;
+
+    /**
+     * Обычно плашка стоит справа под датой. Если название и подписи скрыты, панель с плитками поднимается вплотную к дате
+     * и плашка легла бы на неё: тогда она встаёт слева, в просвете между виджетом погоды и панелью.
+     */
+    private void placeNotice() {
+        if (notice == null) return;
+        boolean roomy = frostTop >= (182 + 44 + 10) * s;
+        moveTo(notice, roomy ? W - mx - noticeW : mx, roomy ? 182 * s : frostTop - 54 * s);
+    }
 
     /** Показывает напоминание, если служба спецвозможностей (фикс «Домой», автозапуск) не включена. */
     private void updateNotice() {
@@ -635,9 +671,32 @@ public class MainActivity extends Activity {
         v.setFocusable(on);
     }
 
+    private static final float CLOCK_AP = 0.34f;      // размер «AM/PM» относительно цифр часов
+
+    /** Ширина часов: в 12-часовом формате добавляется место под мелкое «AM/PM»; правый край остаётся на месте. */
+    private float clockWidth(boolean c12) {
+        android.graphics.Paint pt = clock.getPaint();
+        float w = pt.measureText("88:88") * 1.04f + 8 * s;
+        if (c12) w += pt.measureText(" PM") * CLOCK_AP * 1.1f;
+        return w;
+    }
+
     private void layoutTop() {
         float ph = 84 * s, topY = 46 * s;
+        float cw0 = clockWidth(prefs.clock12()), cx0 = W - mx - cw0;
+        FrameLayout.LayoutParams cl = (FrameLayout.LayoutParams) clock.getLayoutParams();
+        if (cl.width != Math.round(cw0)) {
+            cl.width = Math.round(cw0);
+            cl.leftMargin = Math.round(cx0);
+            clock.setLayoutParams(cl);
+            slots.put(clock, new RectF(cx0, 31 * s, cx0 + cw0, 31 * s + 104 * s));
+        }
         float clockLeft = slots.get(clock).left;
+        if (prefs.clock12()) {
+            // часы прижаты вправо, поэтому капсула идёт вплотную к реальному тексту («9:05 AM» уже, чем «10:05 AM»), а не к запасу под самую широкую запись
+            clockTextW = android.text.Layout.getDesiredWidth(clock.getText(), clock.getPaint());
+            clockLeft = cx0 + cw0 - clockTextW - 12 * s;
+        }
         List<GlassView> bs = new ArrayList<>();
         boolean src = showSource();
         boolean srch = prefs.showSearchBtn();
@@ -652,8 +711,7 @@ public class MainActivity extends Activity {
         show(btnVpn, sv2); show(btnNet, sn); show(btnGear, sg);
         show(btnApps, pt); show(btnLauncher, pt);
         if (sv2) bs.add(btnVpn);
-        if (sn) bs.add(btnNet);
-        if (pt) { bs.add(btnApps); bs.add(btnLauncher); }
+        if (sn) bs.add(btnNet);        if (pt) { bs.add(btnApps); bs.add(btnLauncher); }
         if (sg) bs.add(btnGear);
         capsule.setVisibility(bs.isEmpty() ? View.GONE : View.VISIBLE);
         float pad = 0;      // края капсулы совпадают с краями белого кружка
@@ -754,9 +812,9 @@ public class MainActivity extends Activity {
         frost.radius = 44 * s;
         frost.setLayoutParams(fl);
         frost.setVisibility(View.VISIBLE);
-        float hdrY = gridEnd + 34 * s + 60 * s + 25 * s, panelY = hdrY + 46 * s, panelH = 104 * s;
+        float panelY = gridEnd + 34 * s + botGap, hdrY = panelY - 46 * s, panelH = 104 * s;
         boolean pt = prefs.panelTop();
-        setHdr.setVisibility(pt ? View.GONE : View.VISIBLE);
+        setHdr.setVisibility(pt || !prefs.showHdrs() ? View.GONE : View.VISIBLE);
         for (GlassView g : setTiles) show(g, !pt);
         if (pt) {
             // нижней панели нет: ни заголовка, ни кнопок, ни отступа под ними — ниже матовой панели остаётся лишь небольшой край
@@ -782,15 +840,45 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------ настройки / данные
     private String sigOf() {
         return prefs.hidden().toString() + prefs.order() + prefs.theme() + prefs.showDate()
-                + prefs.cols() + prefs.bgMode() + prefs.showSourceBtn() + prefs.showSearchBtn() + prefs.showVpnBtn() + prefs.showNetBtn() + prefs.showGearBtn() + prefs.showWeather() + prefs.panelTop();
+                + prefs.cols() + prefs.bgMode() + prefs.showSourceBtn() + prefs.showSearchBtn() + prefs.showVpnBtn() + prefs.showNetBtn() + prefs.showGearBtn() + prefs.showWeather() + prefs.panelTop()
+                + prefs.showTitle() + prefs.showHdrs() + prefs.clock12();
+    }
+
+    /**
+     * Вертикальная раскладка зависит от того, показаны ли название приложения и подписи категорий: скрытое место не остаётся пустым.
+     * Без названия и подписей отступ от виджета погоды до матовой панели равен отступу от неё до нижних кнопок.
+     */
+    private void geom() {
+        boolean ti = prefs.showTitle(), hd = prefs.showHdrs();
+        float top = ti ? (hd ? 335 : 325) : (194 + (hd ? 48 : 0));       // верх матовой панели от верха экрана, в условных пикселях
+        vy = (top - 62) * s;
+        frostTop = top * s;
+        placeNotice();
+        botGap = (hd ? 131 : 64) * s;                                    // от низа панели до нижних кнопок
+        if (sv != null) {
+            ViewGroup.LayoutParams lp = sv.getLayoutParams();
+            lp.height = Math.round((root.getHeight() > 0 ? root.getHeight() : H) - vy);
+            moveTo(sv, 0, vy);
+        }
+    }
+
+    /** Название выбранного приложения и подписи категорий — по настройкам. */
+    private void applyLabels() {
+        shelfTitle.setVisibility(prefs.showTitle() ? View.VISIBLE : View.INVISIBLE);
+        boolean hd = prefs.showHdrs();
+        appsHdr.setVisibility(hd ? View.VISIBLE : View.INVISIBLE);
+        setHdr.setVisibility(hd && !prefs.panelTop() ? View.VISIBLE : View.GONE);
     }
 
     private void applyPrefs() {
         sig = sigOf();
+        geom();
         computeGrid();
         dateTv.setVisibility(prefs.showDate() ? View.VISIBLE : View.GONE);
         show(weatherPill, prefs.showWeather());
+        updateClock();
         layoutTop();
+        applyLabels();
     }
 
     /** Режим фона: 0 градиент, 1 картинка, 2 видео. Без файла — фиксированный градиент. */
@@ -1079,7 +1167,18 @@ public class MainActivity extends Activity {
 
     private void updateClock() {
         Date d = new Date();
-        clock.setText(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(d));
+        if (prefs.clock12()) {
+            // 12-часовой формат: «7:05», а «AM/PM» — мелким шрифтом справа (ширину часов см. в layoutTop)
+            String t = new SimpleDateFormat("h:mm", Locale.getDefault()).format(d);
+            String ap = new SimpleDateFormat("a", Locale.US).format(d).toUpperCase(Locale.US);
+            android.text.SpannableString sp = new android.text.SpannableString(t + " " + ap);
+            sp.setSpan(new android.text.style.RelativeSizeSpan(CLOCK_AP), t.length(), sp.length(), android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            clock.setText(sp);
+            // ширина записи меняется только при переходе 9→10 и 12→1: тогда капсула один раз пересаживается к часам
+            if (capsule != null && Math.abs(android.text.Layout.getDesiredWidth(sp, clock.getPaint()) - clockTextW) > 2) layoutTop();
+        } else {
+            clock.setText(new SimpleDateFormat("HH:mm", Locale.getDefault()).format(d));
+        }
         String ds = new SimpleDateFormat(L.en() ? "EEEE, MMMM d" : "EEEE, d MMMM", L.locale()).format(d);
         dateTv.setText(ds.toUpperCase(L.locale()));
     }

@@ -482,7 +482,7 @@ public final class Icons {
                 b.addCircle(sx + sr * 0.55f, sy - sr * 0.3f, sr * 0.85f, Path.Direction.CW);
                 PATH.op(a, b, Path.Op.DIFFERENCE);
                 p.setStyle(Paint.Style.FILL);
-                p.setColor(0xFFE9E4FF);
+                p.setColor(0xFF6F9CFF);
                 c.drawPath(PATH, p);
             } else {
                 p.setStyle(Paint.Style.FILL);

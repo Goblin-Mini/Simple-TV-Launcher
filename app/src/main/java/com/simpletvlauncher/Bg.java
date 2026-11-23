@@ -169,9 +169,6 @@ public final class Bg {
         return ids;
     }
 
-    /** Сколько картинок в папке (для проверки при выборе). */
-    public static int wpFolderSize(Context ctx, String bucket) { return folderIds(ctx.getApplicationContext(), bucket).size(); }
-
     private static java.util.Set<Long> parseIds(String s) {
         java.util.Set<Long> r = new java.util.HashSet<>();
         for (String x : s.split(",")) if (!x.isEmpty()) { try { r.add(Long.parseLong(x)); } catch (NumberFormatException ignored) {} }

@@ -154,7 +154,7 @@ public class WeatherActivity extends Activity {
     private void show(final Weather.Data d) {
         content.removeAllViews();
         titleTv.setText(d.city == null || d.city.isEmpty() ? L.t("Погода") : d.city);
-        subTv.setText(L.t("Обновлено в ") + new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date(d.fetched))
+        subTv.setText(L.t("Обновлено в ") + new java.text.SimpleDateFormat(prefs.clock12() ? "h:mm a" : "HH:mm", prefs.clock12() ? java.util.Locale.US : java.util.Locale.getDefault()).format(new java.util.Date(d.fetched))
                 + "  ·  " + prefs.providerName());
 
         final Weather.Pt cur = d.cur;
@@ -189,7 +189,7 @@ public class WeatherActivity extends Activity {
             GlassView g = panel(26);
             g.painter = (c, v) -> {
                 float hh = v.getHeight(), w = v.getWidth();
-                v.text(c, Weather.local(p, "HH:mm"), w / 2f, hh * 0.2f, hh * 0.13f, 0xB8FFFFFF, 1, Paint.Align.CENTER, 0);
+                v.text(c, Weather.local(p, prefs.clock12() ? "h:mm a" : "HH:mm"), w / 2f, hh * 0.2f, hh * 0.13f, 0xB8FFFFFF, 1, Paint.Align.CENTER, 0);
                 Icons.weather(c, p.icon, w / 2f, hh * 0.41f, hh * 0.165f, v.tp);
                 v.text(c, Weather.temp(p.t), w / 2f, hh * 0.8f, hh * 0.19f, 0xFFFFFFFF, 2, Paint.Align.CENTER, 0);
             };

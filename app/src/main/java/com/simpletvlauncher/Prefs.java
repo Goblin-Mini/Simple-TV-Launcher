@@ -68,6 +68,16 @@ public class Prefs {
     /** Приложение, которое запускается при включении устройства (пакет; пусто — не запускать). */
     public String autoApp() { return sp.getString("autoApp", ""); }
     public void setAutoApp(String v) { sp.edit().putString("autoApp", v).apply(); }
+    /** Открывать приложение автозапуска и после выхода устройства из сна (по умолчанию нет). */
+    public boolean showTitle() { return sp.getBoolean("showTitle", true); }
+    public void setShowTitle(boolean v) { sp.edit().putBoolean("showTitle", v).apply(); }
+    public boolean showHdrs() { return sp.getBoolean("showHdrs", true); }
+    public void setShowHdrs(boolean v) { sp.edit().putBoolean("showHdrs", v).apply(); }
+    public boolean wakeApp() { return sp.getBoolean("wakeApp", false); }
+    public void setWakeApp(boolean v) { sp.edit().putBoolean("wakeApp", v).apply(); }
+    /** 12-часовой формат времени. Пока пользователь не выбрал сам — включён с английским языком приложения и выключен с русским. */
+    public boolean clock12() { return sp.contains("clock12") ? sp.getBoolean("clock12", false) : L.en(); }
+    public void setClock12(boolean v) { sp.edit().putBoolean("clock12", v).apply(); }
     /** На какой загрузке устройства автозапуск уже отработал (повторный старт лаунчера на той же загрузке его не повторяет). */
     public String autoBootDone() { return sp.getString("autoBootDone", ""); }
     public void setAutoBootDone(String v) { sp.edit().putString("autoBootDone", v).apply(); }

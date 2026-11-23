@@ -28,7 +28,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Выбор картинки для фона из памяти приставки (через MediaStore) или системным выбором файла. */
+/** Выбор картинки для фона из памяти устройства (через MediaStore) или системным выбором файла. */
 public class BgPickerActivity extends Activity {
     private static final int REQ_PERM = 3, REQ_PICK = 4, COLS = 4, LIMIT = 60;
 
@@ -60,7 +60,7 @@ public class BgPickerActivity extends Activity {
         tl.leftMargin = Math.round(96 * s);
         tl.topMargin = Math.round(50 * s);
         root.addView(title, tl);
-        sub = UI.text(this, folders ? L.t("Папка должна лежать во внутренней памяти устройства. Не удаляйте её, пока включена автосмена") : video ? L.t("Показаны недавние видео из памяти приставки") : L.t("Показаны недавние изображения из памяти приставки"), 26 * s, 0xA6FFFFFF, GlassView.REG);
+        sub = UI.text(this, folders ? L.t("Папка должна лежать во внутренней памяти устройства. Не удаляйте её, пока включена автосмена") : video ? L.t("Показаны недавние видео из памяти устройства") : L.t("Показаны недавние изображения из памяти устройства"), 26 * s, 0xA6FFFFFF, GlassView.REG);
         FrameLayout.LayoutParams sl = new FrameLayout.LayoutParams(Math.round(W - 192 * s), Math.round(40 * s));
         sl.leftMargin = Math.round(96 * s);
         sl.topMargin = Math.round(132 * s);
