@@ -31,6 +31,9 @@ A lightweight tvOS-style Android TV launcher with a frosted-glass look: app tile
 - Settings backup and restore
 - Russian and English UI (follows the system language)
 
+## Wallpapers
+A [wallpaper pack on Google Drive](https://drive.google.com/file/d/1ou_BwechTGbiR9tA5E9WUOuZsPeq6Zew/) for the home screen. Their color and texture shape the look of the whole launcher, so try them together with blur, dimming and saturation. Video backgrounds can be found, for example, [here](https://ihaqdonate.com/resources/backgrounds); converting them to mp4 keeps them small and makes sure the launcher picks them up. Just put wallpapers and video backgrounds into internal storage and the app will find them.
+
 ## Build
 Requires Android Studio (or JDK 17+ and the Android SDK) and Gradle 9.x.
 
