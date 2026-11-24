@@ -39,6 +39,11 @@ public final class TvChannelsActivity extends Activity {
         } else refresh();
     }
 
+    @Override protected void onResume() {
+        super.onResume();
+        if (TvChannels.hasPermission(this) && rows != null) refresh();
+    }
+
     private void buildShell() {
         int w = getResources().getDisplayMetrics().widthPixels;
         int h = getResources().getDisplayMetrics().heightPixels;
@@ -85,6 +90,13 @@ public final class TvChannelsActivity extends Activity {
             subtitle.setText(L.t("Нет разрешения на чтение списка каналов."));
             rows.removeAllViews();
             addMessage(L.t("Разрешите доступ к телепрограмме в настройках приложения и вернитесь сюда."));
+            TextView settings = row(L.t("Открыть настройки разрешений"), "", true);
+            settings.setOnClickListener(v -> {
+                Intent intent = new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            });
+            rows.addView(settings);
             return;
         }
         channels = TvChannels.load(this, false);
