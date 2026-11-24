@@ -28,6 +28,7 @@ public final class TvChannelsActivity extends Activity {
     private List<TvChannels.Channel> channels = new ArrayList<>();
     private TvChannels.Channel opened;
     private int refreshGeneration;
+    private boolean loadingOpenedPrograms;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -102,7 +103,7 @@ public final class TvChannelsActivity extends Activity {
         subtitle.setText(L.t("Загружаю каналы…"));
         final int generation = ++refreshGeneration;
         Weather.IO.execute(() -> {
-            final List<TvChannels.Channel> loaded = TvChannels.load(this, false);
+            final List<TvChannels.Channel> loaded = TvChannels.load(this, false, 0);
             runOnUiThread(() -> {
                 if (isFinishing() || generation != refreshGeneration) return;
                 channels = loaded;
@@ -116,7 +117,10 @@ public final class TvChannelsActivity extends Activity {
         if (opened != null) {
             subtitle.setText(opened.appName + " · " + opened.name);
             addMessage(L.t("Программы канала"));
-            if (opened.programs.isEmpty()) addMessage(L.t("Приложение пока не опубликовало программы."));
+            if (opened.programs.isEmpty()) {
+                addMessage(L.t(loadingOpenedPrograms ? "Загружаю программы канала…" : "Приложение пока не опубликовало программы."));
+                return;
+            }
             for (TvChannels.Program p : opened.programs) {
                 TextView item = row(p.title + (p.description.isEmpty() ? "" : "\n" + p.description),
                         opened.appName, true);
@@ -138,7 +142,7 @@ public final class TvChannelsActivity extends Activity {
             wrap.setOrientation(LinearLayout.HORIZONTAL);
             wrap.setGravity(Gravity.CENTER_VERTICAL);
             TextView info = row(c.name, c.appName, true);
-            info.setOnClickListener(v -> { opened = c; render(); });
+            info.setOnClickListener(v -> openChannel(c));
             wrap.addView(info, new LinearLayout.LayoutParams(0, Math.round(78 * scale), 1f));
             CheckBox visibleBox = new CheckBox(this);
             visibleBox.setText(L.t("Показывать"));
@@ -171,6 +175,19 @@ public final class TvChannelsActivity extends Activity {
             wrap.addView(down, new LinearLayout.LayoutParams(Math.round(48 * scale), -1));
             rows.addView(wrap);
         }
+    }
+
+    private void openChannel(TvChannels.Channel channel) {
+        opened = channel;
+        loadingOpenedPrograms = true;
+        render();
+        Weather.IO.execute(() -> {
+            TvChannels.loadPrograms(this, channel, 40);
+            runOnUiThread(() -> {
+                loadingOpenedPrograms = false;
+                if (!isFinishing() && opened == channel) render();
+            });
+        });
     }
 
     private void moveChannel(TvChannels.Channel channel, int delta) {
