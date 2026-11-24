@@ -34,12 +34,8 @@ class LauncherRowsView(
     private var appsBuilt = false
     private var channelsBuilt = false
     private var allAppsButton: TextView? = null
-    private var allChannels: List<TvChannels.Channel> = emptyList()
-    private var renderedChannels = 0
-    private var moreButton: TextView? = null
-    private var restoreMoreFocus = false
-    private var lastAddedProgram: View? = null
-    private val channelBatchSize = 6
+    private val channelCardContainers = LinkedHashMap<String, LinearLayout>()
+    private var channelModels: List<TvChannels.Channel> = emptyList()
 
     init {
         orientation = VERTICAL
@@ -60,7 +56,7 @@ class LauncherRowsView(
         // currently focused app tile while the user is navigating with the remote.
         val focusedTag = findFocus()?.tag as? String
         val nextAppsSignature = apps.joinToString("|") { it.pkg + ":" + it.cls + ":" + it.label }
-        // Program lists are populated in later batches, so the signature is based only on channel identity/order.
+        // Only channels explicitly selected in settings are passed here.
         val nextChannelsSignature = channels.joinToString("|") { channel -> channel.key }
 
         if (!appsBuilt || nextAppsSignature != appsSignature) {
@@ -168,59 +164,63 @@ class LauncherRowsView(
 
     private fun buildChannelRails(channels: List<TvChannels.Channel>) {
         channelContainer.removeAllViews()
-        allChannels = channels
-        renderedChannels = 0
-        moreButton = null
-        lastAddedProgram = null
-        restoreMoreFocus = false
-        appendMoreChannels()
-    }
-
-    fun renderedChannelCount(): Int = renderedChannels
-
-    fun setMoreLoading(loading: Boolean) {
-        if (loading && moreButton?.hasFocus() == true) restoreMoreFocus = true
-        moreButton?.isEnabled = !loading
-        moreButton?.text = if (loading) "Загружаю каналы…" else moreButtonLabel()
-        moreButton?.alpha = if (loading) .65f else 1f
-    }
-
-    /** Appends at most six channel shelves, avoiding hundreds of simultaneous poster cards. */
-    fun appendMoreChannels() {
-        val hadMoreFocus = moreButton?.hasFocus() == true || restoreMoreFocus
-        restoreMoreFocus = false
-        moreButton?.let { channelContainer.removeView(it) }
-        moreButton = null
-        lastAddedProgram = null
-
-        val end = (renderedChannels + channelBatchSize).coerceAtMost(allChannels.size)
-        for (index in renderedChannels until end) {
-            lastAddedProgram = addChannelRow(allChannels[index], index) ?: lastAddedProgram
+        channelCardContainers.clear()
+        channelModels = channels
+        channels.forEach { channel ->
+            val title = sectionTitle(channel.name)
+            title.contentDescription = channel.name + " — " + channel.appName
+            channelContainer.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
+                topMargin = (12 * scale).toInt()
+            })
+            val scroll = horizontalRail()
+            val cards = LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                clipChildren = false
+                clipToPadding = false
+            }
+            channelCardContainers[channel.key] = cards
+            scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
+            channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
+            if (channel.programs.isEmpty()) {
+                addChannelPlaceholder(cards, "Загружаю программы…")
+            } else {
+                populateChannelCards(channel, cards)
+            }
         }
-        renderedChannels = end
-        if (renderedChannels < allChannels.size) addMoreButton()
         updateDesiredHeight()
-        requestLayout()
+    }
 
-        if (hadMoreFocus) {
-            val target = moreButton ?: lastAddedProgram
-            target?.post { if (target.isFocusable) target.requestFocus() }
+    /** Called after one selected channel's programmes have been fetched in the background. */
+    fun updateChannelPrograms(channel: TvChannels.Channel) {
+        val cards = channelCardContainers[channel.key] ?: return
+        val focusedTag = findFocus()?.tag as? String
+        cards.removeAllViews()
+        if (channel.programs.isEmpty()) {
+            addChannelPlaceholder(cards, "Программы пока не опубликованы")
+        } else {
+            populateChannelCards(channel, cards)
+        }
+        if (!focusedTag.isNullOrBlank()) {
+            post {
+                val target = findViewWithTag<View>(focusedTag)
+                if (target != null && target.isFocusable && !target.hasFocus()) target.requestFocus()
+            }
         }
     }
 
-    private fun addChannelRow(channel: TvChannels.Channel, channelIndex: Int): View? {
-        val title = sectionTitle(channel.name)
-        title.contentDescription = channel.name + " — " + channel.appName
-        channelContainer.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
-            topMargin = (12 * scale).toInt()
-        })
-        val scroll = horizontalRail()
-        val cards = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            clipChildren = false
-            clipToPadding = false
+    private fun addChannelPlaceholder(cards: LinearLayout, message: String) {
+        val placeholder = TextView(context).apply {
+            text = message
+            textSize = 16f * scale
+            setTextColor(0xCCFFFFFF.toInt())
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding((18 * scale).toInt(), 0, (18 * scale).toInt(), 0)
+            isFocusable = false
         }
-        var lastFocusable: View? = null
+        cards.addView(placeholder, LayoutParams((320 * scale).toInt(), (166 * scale).toInt()))
+    }
+
+    private fun populateChannelCards(channel: TvChannels.Channel, cards: LinearLayout) {
         channel.programs.take(12).forEachIndexed { index, program ->
             val card = LinearLayout(context).apply {
                 tag = "program:" + channel.key + ":" + index
@@ -266,61 +266,11 @@ class LauncherRowsView(
                 rightMargin = (12 * scale).toInt()
             })
             loadPoster(program.posterUri, poster)
-            lastFocusable = card
         }
-        if (channel.programs.isEmpty()) {
-            val empty = TextView(context).apply {
-                text = "Программы канала не загружены"
-                textSize = 16f * scale
-                setTextColor(0xCCFFFFFF.toInt())
-                gravity = Gravity.CENTER
-                isFocusable = false
-            }
-            cards.addView(empty, LayoutParams((320 * scale).toInt(), (166 * scale).toInt()))
-        }
-        scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
-        channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
-        return lastFocusable
-    }
-
-    private fun addMoreButton() {
-        val button = TextView(context).apply {
-            tag = "more_channels"
-            text = moreButtonLabel()
-            textSize = 19f * scale
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            isFocusable = true
-            isClickable = true
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0x553F6F68)
-                cornerRadius = 14f * scale
-                setStroke((1 * scale).toInt().coerceAtLeast(1), 0x88FFFFFF.toInt())
-            }
-            setOnFocusChangeListener { v, focused ->
-                val bg = v.background as? android.graphics.drawable.GradientDrawable
-                bg?.setStroke(
-                    (if (focused) 3 * scale else 1 * scale).toInt().coerceAtLeast(1),
-                    if (focused) 0xFFFFD28A.toInt() else 0x88FFFFFF.toInt()
-                )
-                if (focused) host.ensureKotlinFocusVisible(v)
-            }
-            setOnClickListener { host.loadMoreKotlinChannels() }
-        }
-        moreButton = button
-        channelContainer.addView(button, LayoutParams((380 * scale).toInt(), (58 * scale).toInt()).apply {
-            topMargin = (12 * scale).toInt()
-        })
-    }
-
-    private fun moreButtonLabel(): String {
-        val left = (allChannels.size - renderedChannels).coerceAtLeast(0)
-        return "Показать ещё каналы  ·  осталось $left"
     }
 
     private fun updateDesiredHeight() {
-        val moreHeight = if (renderedChannels < allChannels.size) 70 else 0
-        desiredHeight = (42 + 188 + 18 + renderedChannels * 232 + moreHeight + 42).let { (it * scale).toInt() }
+        desiredHeight = (42 + 188 + 18 + channelModels.size * 232 + 42).let { (it * scale).toInt() }
     }
 
     private fun sectionTitle(value: String): TextView = TextView(context).apply {
