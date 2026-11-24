@@ -65,6 +65,10 @@ public class MainActivity extends Activity {
     private android.widget.Toast kidToast;
     private FrostPanel frost;
     private final List<android.media.tv.TvInputInfo> inputs = new ArrayList<>();
+    private LinearLayout tvShelf;
+    private List<TvChannels.Channel> launcherChannels = new ArrayList<>();
+    private int tvShelfHeight;
+    private int tvLoadGeneration;
 
     /** ScrollView, у которого верхний край прокрутки плавно уходит в прозрачность (маска DST_OUT). */
     static class FadeScroll extends ScrollView {
@@ -359,6 +363,7 @@ public class MainActivity extends Activity {
         // всё тяжёлое (сеть, разбор погоды) — уже после первого кадра, чтобы рабочий стол появлялся мгновенно
         h.removeCallbacks(lateResume);
         h.postDelayed(lateResume, 80);
+        refreshTvChannels();
         // после возврата из другого экрана подсветка могла остаться на старом месте — ставим её заново без анимации
         h.post(() -> {
             invalidateFrost();
@@ -830,6 +835,127 @@ public class MainActivity extends Activity {
         lp.height = Math.max(contentH, Math.round(H - vy));
         content.setLayoutParams(lp);
         content.requestLayout();
+        float channelsTop = pt
+                ? gridEnd + 34 * s + END_PAD * s
+                : panelY + panelH + BOTTOM_PAD * s;
+        buildTvShelf(channelsTop);
+        if (tvShelfHeight > 0) {
+            contentH = Math.max(contentH, Math.round(channelsTop + tvShelfHeight + 50 * s));
+            content.setMinimumHeight(contentH);
+            ViewGroup.LayoutParams resized = content.getLayoutParams();
+            resized.height = Math.max(contentH, Math.round(H - vy));
+            content.setLayoutParams(resized);
+        }
+    }
+
+    private void refreshTvChannels() {
+        final int generation = ++tvLoadGeneration;
+        if (android.os.Build.VERSION.SDK_INT < 26 || !TvChannels.hasPermission(this)) {
+            launcherChannels = new ArrayList<>();
+            if (content != null) layoutContent();
+            return;
+        }
+        Weather.IO.execute(() -> {
+            final List<TvChannels.Channel> loaded = TvChannels.load(this, true);
+            runOnUiThread(() -> {
+                if (isFinishing() || generation != tvLoadGeneration) return;
+                launcherChannels = loaded;
+                if (content != null) layoutContent();
+            });
+        });
+    }
+
+    private void buildTvShelf(float top) {
+        if (tvShelf != null) content.removeView(tvShelf);
+        tvShelf = null;
+        tvShelfHeight = 0;
+        if (launcherChannels == null || launcherChannels.isEmpty()) return;
+        LinearLayout shelf = new LinearLayout(this);
+        shelf.setOrientation(LinearLayout.VERTICAL);
+        shelf.setClipChildren(false);
+        shelf.setClipToPadding(false);
+        for (TvChannels.Channel channel : launcherChannels) {
+            TextView title = UI.text(this, channel.name + "  ·  " + channel.appName,
+                    23 * s, 0xFFF5F5F5, GlassView.MED);
+            title.setGravity(Gravity.CENTER_VERTICAL);
+            shelf.addView(title, new LinearLayout.LayoutParams(-1, Math.round(42 * s)));
+            android.widget.HorizontalScrollView horizontal = new android.widget.HorizontalScrollView(this);
+            horizontal.setHorizontalScrollBarEnabled(false);
+            horizontal.setClipChildren(false);
+            horizontal.setClipToPadding(false);
+            LinearLayout cards = new LinearLayout(this);
+            cards.setOrientation(LinearLayout.HORIZONTAL);
+            cards.setClipChildren(false);
+            cards.setClipToPadding(false);
+            for (TvChannels.Program program : channel.programs) {
+                LinearLayout card = new LinearLayout(this);
+                card.setOrientation(LinearLayout.VERTICAL);
+                card.setFocusable(true);
+                card.setBackgroundColor(0x2AFFFFFF);
+                card.setPadding(Math.round(8 * s), Math.round(6 * s), Math.round(8 * s), Math.round(6 * s));
+                android.widget.ImageView poster = new android.widget.ImageView(this);
+                poster.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+                poster.setBackgroundColor(0x33202020);
+                card.addView(poster, new LinearLayout.LayoutParams(-1, Math.round(104 * s)));
+                TextView name = UI.text(this, program.title, 15 * s, Color.WHITE, GlassView.MED);
+                name.setMaxLines(2);
+                name.setGravity(Gravity.CENTER_VERTICAL);
+                card.addView(name, new LinearLayout.LayoutParams(-1, Math.round(44 * s)));
+                LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(Math.round(190 * s), Math.round(164 * s));
+                cp.rightMargin = Math.round(12 * s);
+                cards.addView(card, cp);
+                card.setOnFocusChangeListener(focusL);
+                card.setOnClickListener(v -> launchTvProgram(program));
+                loadTvPoster(program.posterUri, poster);
+            }
+            horizontal.addView(cards, new android.widget.HorizontalScrollView.LayoutParams(-2, -2));
+            shelf.addView(horizontal, new LinearLayout.LayoutParams(-1, Math.round(174 * s)));
+            tvShelfHeight += Math.round(224 * s);
+        }
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-1, -2);
+        params.leftMargin = Math.round(mx);
+        params.rightMargin = Math.round(mx);
+        params.topMargin = Math.round(top);
+        content.addView(shelf, params);
+        tvShelf = shelf;
+    }
+
+    private void launchTvProgram(TvChannels.Program program) {
+        if (program == null || program.intentUri.isEmpty()) return;
+        try {
+            Intent intent = Intent.parseUri(program.intentUri, Intent.URI_INTENT_SCHEME);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(intent);
+        } catch (Exception ignored) {
+            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(program.intentUri))); }
+            catch (Exception ignoredAgain) { toast(L.t("Не удалось открыть программу")); }
+        }
+    }
+
+    private void loadTvPoster(String rawUri, android.widget.ImageView target) {
+        if (rawUri == null || rawUri.isEmpty()) return;
+        Weather.IO.execute(() -> {
+            android.graphics.Bitmap bitmap = null;
+            java.io.InputStream in = null;
+            try {
+                Uri uri = Uri.parse(rawUri);
+                if ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) {
+                    java.net.URLConnection connection = new java.net.URL(rawUri).openConnection();
+                    connection.setConnectTimeout(5000);
+                    connection.setReadTimeout(7000);
+                    in = connection.getInputStream();
+                } else in = getContentResolver().openInputStream(uri);
+                if (in != null) bitmap = android.graphics.BitmapFactory.decodeStream(in);
+            } catch (Exception ignored) {
+            } finally {
+                if (in != null) try { in.close(); } catch (Exception ignored) { }
+            }
+            final android.graphics.Bitmap result = bitmap;
+            if (result != null) runOnUiThread(() -> {
+                if (!isFinishing() && target.getParent() != null) target.setImageBitmap(result);
+                else result.recycle();
+            });
+        });
     }
 
     private void show(Dialog d) {
