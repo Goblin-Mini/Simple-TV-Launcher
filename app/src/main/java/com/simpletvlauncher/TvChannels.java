@@ -58,17 +58,20 @@ final class TvChannels {
                 TvContract.Channels._ID,
                 TvContract.Channels.COLUMN_PACKAGE_NAME,
                 TvContract.Channels.COLUMN_INTERNAL_PROVIDER_ID,
-                TvContract.Channels.COLUMN_DISPLAY_NAME
+                TvContract.Channels.COLUMN_DISPLAY_NAME,
+                TvContract.Channels.COLUMN_TYPE
         };
         try (Cursor cursor = context.getContentResolver().query(
-                TvContract.PreviewChannels.CONTENT_URI, projection, null, null,
+                TvContract.Channels.CONTENT_URI, projection, null, null,
                 TvContract.Channels.COLUMN_DISPLAY_NAME + " COLLATE NOCASE ASC")) {
             if (cursor == null) return result;
             int idCol = cursor.getColumnIndexOrThrow(TvContract.Channels._ID);
             int pkgCol = cursor.getColumnIndexOrThrow(TvContract.Channels.COLUMN_PACKAGE_NAME);
             int internalCol = cursor.getColumnIndexOrThrow(TvContract.Channels.COLUMN_INTERNAL_PROVIDER_ID);
             int nameCol = cursor.getColumnIndexOrThrow(TvContract.Channels.COLUMN_DISPLAY_NAME);
+            int typeCol = cursor.getColumnIndexOrThrow(TvContract.Channels.COLUMN_TYPE);
             while (cursor.moveToNext()) {
+                if (cursor.getInt(typeCol) != TvContract.Channels.TYPE_PREVIEW) continue;
                 long id = cursor.getLong(idCol);
                 String pkg = cursor.getString(pkgCol);
                 String internal = cursor.getString(internalCol);
