@@ -17,6 +17,7 @@ final class TvChannels {
     static final String PERMISSION = "android.permission.READ_TV_LISTINGS";
     private static final String PREFS = "tv_channels";
     private static final String HIDDEN = "hidden_channel_keys";
+    private static final String ORDER = "channel_order_v1";
 
     static final class Channel {
         final long id;
@@ -90,7 +91,31 @@ final class TvChannels {
         } catch (SecurityException ignored) {
             // OEM firmware may not grant READ_TV_LISTINGS even after runtime approval.
         } catch (Exception ignored) { }
+        List<String> order = order(context);
+        if (!order.isEmpty()) {
+            java.util.Map<String, Integer> positions = new java.util.HashMap<>();
+            for (int i = 0; i < order.size(); i++) positions.put(order.get(i), i);
+            Collections.sort(result, (a, b) -> Integer.compare(
+                    positions.containsKey(a.key) ? positions.get(a.key) : Integer.MAX_VALUE,
+                    positions.containsKey(b.key) ? positions.get(b.key) : Integer.MAX_VALUE));
+        }
         return result;
+    }
+
+    static List<String> order(Context context) {
+        String raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(ORDER, "");
+        List<String> result = new ArrayList<>();
+        if (raw != null && !raw.isEmpty()) Collections.addAll(result, raw.split("\\n"));
+        return result;
+    }
+
+    static void setOrder(Context context, List<Channel> channels) {
+        StringBuilder value = new StringBuilder();
+        for (Channel channel : channels) {
+            if (value.length() > 0) value.append('\\n');
+            value.append(channel.key);
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(ORDER, value.toString()).apply();
     }
 
     private static void readPrograms(Context context, Channel channel) {
