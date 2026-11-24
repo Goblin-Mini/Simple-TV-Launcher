@@ -153,8 +153,33 @@ public final class TvChannelsActivity extends Activity {
                 if (oldFocus >= 0 && oldFocus < rows.getChildCount()) rows.getChildAt(oldFocus).requestFocus();
             });
             wrap.addView(visibleBox);
+            TextView up = new TextView(this);
+            up.setText("↑");
+            up.setTextColor(Color.WHITE);
+            up.setTextSize(25 * scale);
+            up.setGravity(Gravity.CENTER);
+            up.setFocusable(true);
+            up.setOnClickListener(v -> moveChannel(c, -1));
+            wrap.addView(up, new LinearLayout.LayoutParams(Math.round(48 * scale), -1));
+            TextView down = new TextView(this);
+            down.setText("↓");
+            down.setTextColor(Color.WHITE);
+            down.setTextSize(25 * scale);
+            down.setGravity(Gravity.CENTER);
+            down.setFocusable(true);
+            down.setOnClickListener(v -> moveChannel(c, 1));
+            wrap.addView(down, new LinearLayout.LayoutParams(Math.round(48 * scale), -1));
             rows.addView(wrap);
         }
+    }
+
+    private void moveChannel(TvChannels.Channel channel, int delta) {
+        int from = channels.indexOf(channel);
+        int to = from + delta;
+        if (from < 0 || to < 0 || to >= channels.size()) return;
+        java.util.Collections.swap(channels, from, to);
+        TvChannels.setOrder(this, channels);
+        render();
     }
 
     private TextView row(String title, String detail, boolean focusable) {
