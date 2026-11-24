@@ -39,7 +39,7 @@ class LauncherRowsView(
         setPadding((68 * scale).toInt(), (18 * scale).toInt(), (68 * scale).toInt(), (42 * scale).toInt())
         addView(sectionTitle("Приложения"), LayoutParams(-1, (42 * scale).toInt()))
         val appScroll = horizontalRail()
-        appScroll.addView(appRail, HorizontalScrollView.LayoutParams(-2, -2))
+        appScroll.addView(appRail, FrameLayout.LayoutParams(-2, -2))
         addView(appScroll, LayoutParams(-1, (188 * scale).toInt()))
         addView(channelContainer, LayoutParams(-1, -2))
     }
@@ -142,7 +142,7 @@ class LauncherRowsView(
                 })
                 loadPoster(program.posterUri, poster)
             }
-            scroll.addView(cards, HorizontalScrollView.LayoutParams(-2, -2))
+            scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
             channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
         }
         desiredHeight = (42 + 188 + 18 + channels.size * 220 + 42).let { (it * scale).toInt() }
