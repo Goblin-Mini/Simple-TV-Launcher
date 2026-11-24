@@ -718,9 +718,14 @@ public class MainActivity extends Activity {
         boolean pt = prefs.panelTop();
         boolean sv2 = prefs.showVpnBtn(), sn = prefs.showNetBtn(), sg = prefs.showGearBtn() || pt;
         show(btnVpn, sv2); show(btnNet, sn); show(btnGear, sg);
-        show(btnApps, pt); show(btnLauncher, pt);
+        // Нижняя панель скрыта на новом экране, поэтому настройки лаунчера
+        // всегда должны оставаться доступны сверху отдельной кнопкой Tune.
+        show(btnApps, pt);
+        show(btnLauncher, true);
         if (sv2) bs.add(btnVpn);
-        if (sn) bs.add(btnNet);        if (pt) { bs.add(btnApps); bs.add(btnLauncher); }
+        if (sn) bs.add(btnNet);
+        if (pt) bs.add(btnApps);
+        bs.add(btnLauncher);
         if (sg) bs.add(btnGear);
         capsule.setVisibility(bs.isEmpty() ? View.GONE : View.VISIBLE);
         float pad = 0;      // края капсулы совпадают с краями белого кружка
@@ -866,6 +871,10 @@ public class MainActivity extends Activity {
 
     public void openAllAppsPage() {
         if (!kidBlocked()) startActivity(new Intent(this, AllAppsActivity.class));
+    }
+
+    public void openChannelSettingsFromKotlin() {
+        if (!kidBlocked()) startActivity(new Intent(this, TvChannelsActivity.class));
     }
 
     public void launchFromKotlin(AppRepo.AppItem item) { launch(item); }
