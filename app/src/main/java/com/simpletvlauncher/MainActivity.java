@@ -817,7 +817,11 @@ public class MainActivity extends Activity {
         }
         kotlinHome.render(visible, launcherChannels);
         frost.setVisibility(View.GONE);
-        for (AppTile old : tiles) old.setVisibility(View.GONE);
+        for (AppTile old : tiles) {
+            if (old.getParent() == content) content.removeView(old);
+            slots.remove(old);
+        }
+        tiles.clear();
         setHdr.setVisibility(View.GONE);
         for (GlassView g : setTiles) g.setVisibility(View.GONE);
         if (tvShelf != null) { content.removeView(tvShelf); tvShelf = null; }
@@ -1163,6 +1167,10 @@ public class MainActivity extends Activity {
     }
 
     private void hideKotlinApp(AppTile t) {
+        pendingFocus = 0;
+        for (int i = 0; i < visible.size(); i++) {
+            if (visible.get(i).pkg.equals(t.item.pkg)) { pendingFocus = i; break; }
+        }
         java.util.Set<String> hs = prefs.hidden();
         hs.add(t.item.pkg);
         prefs.setHidden(hs);
@@ -1171,7 +1179,8 @@ public class MainActivity extends Activity {
 
     private void deleteKotlinApp(AppTile t) {
         deletePkg = t.item.pkg;
-        deleteIdx = Math.max(0, tiles.indexOf(t));
+        deleteIdx = 0;
+        for (int i = 0; i < visible.size(); i++) if (visible.get(i).pkg.equals(t.item.pkg)) { deleteIdx = i; break; }
         deleteAt = System.currentTimeMillis();
         UI.start(this, new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + t.item.pkg)));
     }
