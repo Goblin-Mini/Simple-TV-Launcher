@@ -63,7 +63,7 @@ final class TvChannels {
         };
         try (Cursor cursor = context.getContentResolver().query(
                 TvContract.Channels.CONTENT_URI, projection, null, null,
-                TvContract.Channels.COLUMN_DISPLAY_NAME + " COLLATE NOCASE ASC")) {
+                TvContract.Channels.COLUMN_DISPLAY_NAME + " ASC")) {
             if (cursor == null) return result;
             int idCol = cursor.getColumnIndexOrThrow(TvContract.Channels._ID);
             int pkgCol = cursor.getColumnIndexOrThrow(TvContract.Channels.COLUMN_PACKAGE_NAME);
