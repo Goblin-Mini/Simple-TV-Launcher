@@ -16,7 +16,7 @@ import java.util.List;
 public final class TvChannels {
     static final String PERMISSION = "android.permission.READ_TV_LISTINGS";
     private static final String PREFS = "tv_channels";
-    private static final String HIDDEN = "hidden_channel_keys";
+    private static final String SELECTED = "selected_channel_keys";
     private static final String ORDER = "channel_order_v1";
 
     public static final class Channel {
@@ -60,7 +60,7 @@ public final class TvChannels {
         int programChannelsLoaded = 0;
         if (Build.VERSION.SDK_INT < 26 || !hasPermission(context)) return result;
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        java.util.Set<String> hidden = prefs.getStringSet(HIDDEN, Collections.<String>emptySet());
+        java.util.Set<String> selected = prefs.getStringSet(SELECTED, Collections.<String>emptySet());
         String[] projection = {
                 TvContract.Channels._ID,
                 TvContract.Channels.COLUMN_PACKAGE_NAME,
@@ -89,7 +89,7 @@ public final class TvChannels {
                             context.getPackageManager().getApplicationInfo(pkg, 0)).toString();
                 } catch (Exception ignored) { }
                 Channel channel = new Channel(id, pkg, internal, name, app);
-                if (!selectedOnly || !hidden.contains(channel.key)) {
+                if (!selectedOnly || selected.contains(channel.key)) {
                     if (programChannelsLoaded < programChannelLimit) {
                         readPrograms(context, channel, 12);
                         programChannelsLoaded++;
@@ -156,21 +156,22 @@ public final class TvChannels {
         } catch (Exception ignored) { }
     }
 
-    static boolean isHidden(Context context, Channel channel) {
+    /** True only when the user explicitly added this channel to the launcher home screen. */
+    static boolean isSelected(Context context, Channel channel) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getStringSet(HIDDEN, Collections.<String>emptySet()).contains(channel.key);
+                .getStringSet(SELECTED, Collections.<String>emptySet()).contains(channel.key);
     }
 
-    static void setHidden(Context context, Channel channel, boolean hidden) {
+    static void setSelected(Context context, Channel channel, boolean selected) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        java.util.Set<String> values = new java.util.HashSet<>(prefs.getStringSet(HIDDEN, Collections.<String>emptySet()));
-        if (hidden) values.add(channel.key); else values.remove(channel.key);
-        prefs.edit().putStringSet(HIDDEN, values).apply();
+        java.util.Set<String> values = new java.util.HashSet<>(prefs.getStringSet(SELECTED, Collections.<String>emptySet()));
+        if (selected) values.add(channel.key); else values.remove(channel.key);
+        prefs.edit().putStringSet(SELECTED, values).apply();
     }
 
-    static int hiddenCount(Context context) {
+    static int selectedCount(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getStringSet(HIDDEN, Collections.<String>emptySet()).size();
+                .getStringSet(SELECTED, Collections.<String>emptySet()).size();
     }
 
     private TvChannels() { }
