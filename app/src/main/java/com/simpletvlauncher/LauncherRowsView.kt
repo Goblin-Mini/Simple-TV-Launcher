@@ -60,6 +60,8 @@ class LauncherRowsView(
 
     init {
         orientation = VERTICAL
+        appRail.orientation = HORIZONTAL
+        channelContainer.orientation = VERTICAL
         clipChildren = false
         clipToPadding = false
         setPadding((58 * scale).toInt(), (12 * scale).toInt(),
@@ -272,7 +274,7 @@ class LauncherRowsView(
                 action?.isFocusable = channelModels.isEmpty()
                 action?.isClickable = channelModels.isEmpty()
                 action?.setOnClickListener(if (channelModels.isEmpty()) {
-                    OnClickListener { host.openChannelSettingsFromKotlin() }
+                    View.OnClickListener { host.openChannelSettingsFromKotlin() }
                 } else null)
             }
         } else {
