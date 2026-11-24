@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
 }
 
 // Release signing: keystore.properties (storeFile, storePassword, keyAlias, keyPassword) lives in the project root
@@ -19,8 +20,8 @@ android {
         applicationId = "com.simpletvlauncher"
         minSdk = 24
         targetSdk = 34
-        versionCode = 9
-        versionName = "1.5"
+        versionCode = 10
+        versionName = "1.6-kotlin"
     }
 
     signingConfigs {
