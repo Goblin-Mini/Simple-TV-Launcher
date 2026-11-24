@@ -55,6 +55,11 @@ class LauncherRowsView(
 
     init {
         orientation = VERTICAL
+        // Each selected Android TV channel is a separate vertical shelf.
+        // Leaving this at LinearLayout's default horizontal orientation pushed
+        // the shelves beyond the right edge of the screen.
+        appRail.orientation = HORIZONTAL
+        channelContainer.orientation = VERTICAL
         clipChildren = false
         clipToPadding = false
         setPadding((68 * scale).toInt(), (18 * scale).toInt(), (68 * scale).toInt(), (42 * scale).toInt())
