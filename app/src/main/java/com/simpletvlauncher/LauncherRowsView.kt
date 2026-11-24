@@ -511,10 +511,10 @@ class LauncherRowsView(
                 textSize = normal.captionSp * scale
                 setTextColor(Color.WHITE)
                 maxLines = 2
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                textAlignment = View.TEXT_ALIGNMENT_CENTER
+                gravity = Gravity.TOP or Gravity.START
+                textAlignment = View.TEXT_ALIGNMENT_VIEW_START
                 isFocusable = false
-                setPadding((2 * scale).roundToInt(), (7 * scale).roundToInt(), (2 * scale).roundToInt(), 0)
+                setPadding((6 * scale).roundToInt(), (7 * scale).roundToInt(), (4 * scale).roundToInt(), 0)
             }
             root.addView(title, LayoutParams(-1, (normal.captionHeight * scale).roundToInt()))
 
