@@ -95,6 +95,8 @@ class LauncherRowsView(
 
     fun hasFocusedItem(): Boolean = findFocus() != null
 
+    fun needsChannelPrograms(channel: TvChannels.Channel): Boolean = !channelCardContainers.containsKey(channel.key)
+
     private fun buildAppRail(apps: List<AppRepo.AppItem>) {
         appRail.removeAllViews()
         val all = TextView(context).apply {
