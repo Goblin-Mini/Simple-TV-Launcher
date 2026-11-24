@@ -50,8 +50,9 @@ public final class TvChannels {
                 c.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED;
     }
 
+    /** By default returns only channel metadata; program queries are always explicit and bounded. */
     static List<Channel> load(Context context, boolean selectedOnly) {
-        return load(context, selectedOnly, Integer.MAX_VALUE);
+        return load(context, selectedOnly, 0);
     }
 
     /** Loads channel metadata and only fetches programs for the first N visible channels. */
