@@ -31,6 +31,8 @@ class LauncherRowsView(
     private var desiredHeight = 0
     private var appsSignature = ""
     private var channelsSignature = ""
+    private var appsBuilt = false
+    private var channelsBuilt = false
     private var allAppsButton: TextView? = null
 
     init {
@@ -56,15 +58,18 @@ class LauncherRowsView(
             channel.key + ":" + channel.programs.joinToString(";") { it.title + "@" + it.posterUri }
         }
 
-        if (nextAppsSignature != appsSignature) {
+        if (!appsBuilt || nextAppsSignature != appsSignature) {
             buildAppRail(apps)
             appsSignature = nextAppsSignature
+            appsBuilt = true
         }
-        if (nextChannelsSignature != channelsSignature) {
+        if (!channelsBuilt || nextChannelsSignature != channelsSignature) {
             buildChannelRails(channels)
             channelsSignature = nextChannelsSignature
+            channelsBuilt = true
         }
-        desiredHeight = (42 + 188 + 18 + channels.size * 220 + 42).let { (it * scale).toInt() }
+        // A TV row consists of a 12dp title gap, a 42dp title and a 178dp card rail.
+        desiredHeight = (42 + 188 + 18 + channels.size * 232 + 42).let { (it * scale).toInt() }
         requestLayout()
 
         post {
@@ -82,8 +87,8 @@ class LauncherRowsView(
     }
 
     fun focusAppAt(index: Int) {
-        val target = appRail.getChildAt((index + 1).coerceAtMost(appRail.childCount - 1))
-        if (target != null) target.requestFocus() else focusFirst()
+        val target = appRail.getChildAt(index + 1)
+        if (target != null && target.isFocusable) target.requestFocus() else focusFirst()
     }
 
     fun hasFocusedItem(): Boolean = findFocus() != null
