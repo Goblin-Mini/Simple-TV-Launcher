@@ -2,7 +2,7 @@ name: Android CI
 
 on:
   push:
-    branches: [ main, feature/android-tv-preview-channels ]
+    branches: [ main, feature/android-tv-preview-channels, feature/kotlin-tv-home-redesign ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
