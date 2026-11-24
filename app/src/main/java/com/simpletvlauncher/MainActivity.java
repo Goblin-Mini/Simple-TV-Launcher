@@ -912,7 +912,7 @@ public class MainActivity extends Activity {
         if (pending.isEmpty()) return;
         Weather.IO.execute(() -> {
             for (TvChannels.Channel channel : pending) {
-                TvChannels.loadPrograms(this, channel, 12);
+                TvChannels.loadPrograms(this, channel, 16);
                 runOnUiThread(() -> {
                     if (isFinishing() || generation != tvLoadGeneration || kotlinHome == null) return;
                     kotlinHome.updateChannelPrograms(channel);
