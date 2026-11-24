@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -35,7 +36,10 @@ class AllAppsActivity : Activity() {
             typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
         }, LinearLayout.LayoutParams(-1, (62 * scale).toInt()))
         val scroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false }
-        rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        rows = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        }
         scroll.addView(rows)
         page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val back = TextView(this).apply {
@@ -106,7 +110,11 @@ class AllAppsActivity : Activity() {
             setTextColor(Color.WHITE)
             textSize = 20f * scale
         })
-        rows.getChildAt(0)?.let { first -> first.post { first.requestFocus() } }
+        rows.getChildAt(0)?.let { firstRow ->
+            (firstRow as? ViewGroup)?.getChildAt(0)?.let { firstCard ->
+                firstCard.post { firstCard.requestFocus() }
+            }
+        }
     }
 
     override fun onBackPressed() { finish() }
