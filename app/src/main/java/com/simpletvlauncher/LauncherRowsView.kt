@@ -340,6 +340,11 @@ class LauncherRowsView(
         val icon = ImageView(context).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             isFocusable = false
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFF242424.toInt())
+            }
+            clipToOutline = true
             try {
                 val drawable = context.packageManager.getApplicationIcon(channel.packageName)
                 setImageDrawable(drawable)
@@ -468,9 +473,16 @@ class LauncherRowsView(
                     }
                     if (bitmap != null) host.runOnUiThread {
                         if (target.isAttachedToWindow) {
-                            target.scaleType = if (bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1) > 1.25f)
+                            val ratio = bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1)
+                            target.scaleType = if (ratio > 1.25f)
                                 ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
                             target.setImageBitmap(bitmap)
+                            // Follow the artwork shape: landscape programme banners are wide,
+                            // portrait posters stay compact like Android TV preview shelves.
+                            (card.layoutParams as? MarginLayoutParams)?.let { lp ->
+                                lp.width = ((if (ratio > 1.25f) 320f else 150f) * scale).toInt()
+                                card.layoutParams = lp
+                            }
                         } else bitmap.recycle()
                     }
                 } catch (_: Exception) { }
