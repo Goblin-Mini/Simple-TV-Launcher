@@ -143,6 +143,7 @@ public final class TvChannels {
                 TvContract.PreviewPrograms.COLUMN_POSTER_ART_URI
         };
         Uri uri = TvContract.buildPreviewProgramsUriForChannel(channel.id);
+        List<Program> withoutArtwork = new ArrayList<>();
         try (Cursor cursor = context.getContentResolver().query(uri, projection, null, null,
                 TvContract.PreviewPrograms.COLUMN_WEIGHT + " DESC")) {
             if (cursor == null) return;
@@ -150,9 +151,20 @@ public final class TvChannels {
             int descCol = cursor.getColumnIndex(TvContract.PreviewPrograms.COLUMN_SHORT_DESCRIPTION);
             int intentCol = cursor.getColumnIndex(TvContract.PreviewPrograms.COLUMN_INTENT_URI);
             int posterCol = cursor.getColumnIndex(TvContract.PreviewPrograms.COLUMN_POSTER_ART_URI);
-            while (cursor.moveToNext() && channel.programs.size() < limit) {
-                channel.programs.add(new Program(cursor.getString(titleCol), cursor.getString(descCol),
-                        cursor.getString(intentCol), cursor.getString(posterCol)));
+            while (cursor.moveToNext()) {
+                Program program = new Program(cursor.getString(titleCol), cursor.getString(descCol),
+                        cursor.getString(intentCol), cursor.getString(posterCol));
+                if (!program.posterUri.isEmpty()) {
+                    if (channel.programs.size() < limit) channel.programs.add(program);
+                } else if (withoutArtwork.size() < limit) {
+                    withoutArtwork.add(program);
+                }
+            }
+            // Fill remaining places only after every available poster-bearing programme
+            // has been considered. UI uses the publisher icon as a non-empty fallback.
+            for (Program program : withoutArtwork) {
+                if (channel.programs.size() >= limit) break;
+                channel.programs.add(program);
             }
         } catch (Exception ignored) { }
     }
