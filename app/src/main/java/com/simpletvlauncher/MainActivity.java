@@ -822,12 +822,36 @@ public class MainActivity extends Activity {
         for (GlassView g : setTiles) g.setVisibility(View.GONE);
         if (tvShelf != null) { content.removeView(tvShelf); tvShelf = null; }
         tvShelfHeight = 0;
+        updateKotlinContentHeight();
+    }
+
+    private void updateKotlinContentHeight() {
+        if (content == null || kotlinHome == null) return;
         contentH = Math.max(Math.round(kotlinHome.contentHeight() + 70 * s), Math.round(H - vy));
         content.setMinimumHeight(contentH);
         ViewGroup.LayoutParams lp = content.getLayoutParams();
         lp.height = contentH;
         content.setLayoutParams(lp);
         content.requestLayout();
+    }
+
+    /** Load the next small group of channel programs only when the user reaches the end of the current group. */
+    public void loadMoreKotlinChannels() {
+        if (loadingMoreTvChannels || kotlinHome == null) return;
+        final int from = kotlinHome.renderedChannelCount();
+        if (from >= launcherChannels.size()) return;
+        final int to = Math.min(from + 6, launcherChannels.size());
+        loadingMoreTvChannels = true;
+        kotlinHome.setMoreLoading(true);
+        Weather.IO.execute(() -> {
+            for (int i = from; i < to; i++) TvChannels.loadPrograms(this, launcherChannels.get(i), 12);
+            runOnUiThread(() -> {
+                loadingMoreTvChannels = false;
+                if (isFinishing() || kotlinHome == null) return;
+                kotlinHome.appendMoreChannels();
+                updateKotlinContentHeight();
+            });
+        });
     }
 
     /** Scroll the outer list when a Kotlin banner receives DPAD focus. */
@@ -864,7 +888,7 @@ public class MainActivity extends Activity {
             return;
         }
         Weather.IO.execute(() -> {
-            final List<TvChannels.Channel> loaded = TvChannels.load(this, true);
+            final List<TvChannels.Channel> loaded = TvChannels.load(this, true, 6);
             runOnUiThread(() -> {
                 if (isFinishing() || generation != tvLoadGeneration) return;
                 launcherChannels = loaded;
