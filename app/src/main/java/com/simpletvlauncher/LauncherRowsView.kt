@@ -170,14 +170,28 @@ class LauncherRowsView(
         // Diff the selected set rather than replacing the whole channel area.
         // Existing rows remain on screen when the user adds or removes one channel.
         val wanted = channels.map { it.key }.toSet()
+        val focusedTag = findFocus()?.tag as? String
         val removed = channelShelfContainers.keys.filter { it !in wanted }
         removed.forEach { key ->
             channelShelfContainers.remove(key)?.let { channelContainer.removeView(it) }
             channelCardContainers.remove(key)
         }
         channelModels = channels
+        // Reapply the stored Android TV channel order without rebuilding card contents.
+        channels.forEach { channel ->
+            channelShelfContainers[channel.key]?.let { shelf ->
+                channelContainer.removeView(shelf)
+                channelContainer.addView(shelf)
+            }
+        }
         updateLoadingLabel()
         updateDesiredHeight()
+        if (!focusedTag.isNullOrBlank()) {
+            post {
+                val target = findViewWithTag<View>(focusedTag)
+                if (target != null && target.isFocusable && !target.hasFocus()) target.requestFocus()
+            }
+        }
     }
 
     private fun updateLoadingLabel() {
