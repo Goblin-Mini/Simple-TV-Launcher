@@ -851,6 +851,11 @@ public class MainActivity extends Activity {
         content.requestLayout();
     }
 
+    /** Recalculate ScrollView bounds after a channel shelf expands or collapses on DPAD focus. */
+    public void refreshKotlinHomeHeight() {
+        updateKotlinContentHeight();
+    }
+
     /** Load the next small group of channel programs only when the user reaches the end of the current group. */
     /** Scroll the outer list when a Kotlin banner receives DPAD focus. */
     public void ensureKotlinFocusVisible(View focused) {
