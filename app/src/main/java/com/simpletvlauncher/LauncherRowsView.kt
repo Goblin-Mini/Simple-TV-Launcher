@@ -36,6 +36,7 @@ class LauncherRowsView(
     private var allAppsButton: TextView? = null
     private val channelCardContainers = LinkedHashMap<String, LinearLayout>()
     private var channelModels: List<TvChannels.Channel> = emptyList()
+    private var loadingChannelsLabel: TextView? = null
 
     init {
         orientation = VERTICAL
@@ -166,46 +167,47 @@ class LauncherRowsView(
         channelContainer.removeAllViews()
         channelCardContainers.clear()
         channelModels = channels
-        channels.forEach { channel ->
-            val title = sectionTitle(channel.name)
-            title.contentDescription = channel.name + " — " + channel.appName
-            channelContainer.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
-                topMargin = (12 * scale).toInt()
-            })
-            val scroll = horizontalRail()
-            val cards = LinearLayout(context).apply {
-                orientation = HORIZONTAL
-                clipChildren = false
-                clipToPadding = false
+        loadingChannelsLabel = null
+        if (channels.isNotEmpty()) {
+            loadingChannelsLabel = TextView(context).apply {
+                text = "Загружаю выбранные каналы…"
+                textSize = 17f * scale
+                setTextColor(0xCCFFFFFF.toInt())
+                gravity = Gravity.CENTER_VERTICAL
             }
-            channelCardContainers[channel.key] = cards
-            scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
-            channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
-            if (channel.programs.isEmpty()) {
-                addChannelPlaceholder(cards, "Загружаю программы…")
-            } else {
-                populateChannelCards(channel, cards)
-            }
+            channelContainer.addView(loadingChannelsLabel, LayoutParams(-1, (56 * scale).toInt()))
         }
         updateDesiredHeight()
     }
 
-    /** Called after one selected channel's programmes have been fetched in the background. */
+    /** Add one selected channel only after its program data is ready. */
     fun updateChannelPrograms(channel: TvChannels.Channel) {
-        val cards = channelCardContainers[channel.key] ?: return
-        val focusedTag = findFocus()?.tag as? String
-        cards.removeAllViews()
+        if (channelCardContainers.containsKey(channel.key)) return
+        if (loadingChannelsLabel != null) {
+            channelContainer.removeView(loadingChannelsLabel)
+            loadingChannelsLabel = null
+        }
+        val title = sectionTitle(channel.name)
+        title.contentDescription = channel.name + " — " + channel.appName
+        channelContainer.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
+            topMargin = (12 * scale).toInt()
+        })
+        val scroll = horizontalRail()
+        val cards = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        channelCardContainers[channel.key] = cards
+        scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
+        channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
         if (channel.programs.isEmpty()) {
             addChannelPlaceholder(cards, "Программы пока не опубликованы")
         } else {
             populateChannelCards(channel, cards)
         }
-        if (!focusedTag.isNullOrBlank()) {
-            post {
-                val target = findViewWithTag<View>(focusedTag)
-                if (target != null && target.isFocusable && !target.hasFocus()) target.requestFocus()
-            }
-        }
+        updateDesiredHeight()
+        requestLayout()
     }
 
     private fun addChannelPlaceholder(cards: LinearLayout, message: String) {
@@ -270,7 +272,7 @@ class LauncherRowsView(
     }
 
     private fun updateDesiredHeight() {
-        desiredHeight = (42 + 188 + 18 + channelModels.size * 232 + 42).let { (it * scale).toInt() }
+        desiredHeight = (42 + 188 + 18 + channelCardContainers.size * 232 + (if (loadingChannelsLabel != null) 56 else 0) + 42).let { (it * scale).toInt() }
     }
 
     private fun sectionTitle(value: String): TextView = TextView(context).apply {
