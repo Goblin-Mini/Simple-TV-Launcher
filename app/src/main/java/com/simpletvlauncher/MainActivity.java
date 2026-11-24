@@ -1055,6 +1055,17 @@ public class MainActivity extends Activity {
 
     /** Название выбранного приложения и подписи категорий — по настройкам. */
     private void applyLabels() {
+        // Kotlin home draws its own section titles inside the scrolling content.
+        // Never show legacy labels above it: they overlap the app banner rail.
+        if (kotlinHome != null) {
+            if (shelfTitle != null) {
+                shelfTitle.setText("");
+                shelfTitle.setVisibility(View.GONE);
+            }
+            if (appsHdr != null) appsHdr.setVisibility(View.GONE);
+            if (setHdr != null) setHdr.setVisibility(View.GONE);
+            return;
+        }
         shelfTitle.setVisibility(prefs.showTitle() ? View.VISIBLE : View.INVISIBLE);
         boolean hd = prefs.showHdrs();
         appsHdr.setVisibility(hd ? View.VISIBLE : View.INVISIBLE);
