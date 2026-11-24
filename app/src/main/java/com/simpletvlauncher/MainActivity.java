@@ -890,8 +890,13 @@ public class MainActivity extends Activity {
     /** Fetches selected channels one by one; each completed row appears immediately. */
     private void loadSelectedChannelPrograms(List<TvChannels.Channel> channels, int generation) {
         if (channels == null || channels.isEmpty()) return;
+        final List<TvChannels.Channel> pending = new ArrayList<>();
+        for (TvChannels.Channel channel : channels) {
+            if (kotlinHome == null || kotlinHome.needsChannelPrograms(channel)) pending.add(channel);
+        }
+        if (pending.isEmpty()) return;
         Weather.IO.execute(() -> {
-            for (TvChannels.Channel channel : channels) {
+            for (TvChannels.Channel channel : pending) {
                 TvChannels.loadPrograms(this, channel, 12);
                 runOnUiThread(() -> {
                     if (isFinishing() || generation != tvLoadGeneration || kotlinHome == null) return;
