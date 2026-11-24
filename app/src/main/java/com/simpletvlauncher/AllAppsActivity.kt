@@ -33,9 +33,15 @@ class AllAppsActivity : Activity() {
             text = "Все программы"
             textSize = 36f * scale
             setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER_VERTICAL
+            includeFontPadding = true
             typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
-        }, LinearLayout.LayoutParams(-1, (62 * scale).toInt()))
-        val scroll = ScrollView(this).apply { isVerticalScrollBarEnabled = false }
+        }, LinearLayout.LayoutParams(-1, (88 * scale).toInt()))
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            clipToPadding = false
+            setPadding(0, (10 * scale).toInt(), 0, 0)
+        }
         rows = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
