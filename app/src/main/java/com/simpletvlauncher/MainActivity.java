@@ -889,7 +889,9 @@ public class MainActivity extends Activity {
             cards.setOrientation(LinearLayout.HORIZONTAL);
             cards.setClipChildren(false);
             cards.setClipToPadding(false);
+            int programCount = 0;
             for (TvChannels.Program program : channel.programs) {
+                if (programCount++ >= 12) break;
                 LinearLayout card = new LinearLayout(this);
                 card.setOrientation(LinearLayout.VERTICAL);
                 card.setFocusable(true);
