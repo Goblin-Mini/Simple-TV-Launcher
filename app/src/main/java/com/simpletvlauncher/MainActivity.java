@@ -68,6 +68,7 @@ public class MainActivity extends Activity {
     private FrostPanel frost;
     private final List<android.media.tv.TvInputInfo> inputs = new ArrayList<>();
     private LinearLayout tvShelf;
+    private LauncherRowsView kotlinHome;
     private List<TvChannels.Channel> launcherChannels = new ArrayList<>();
     private int tvShelfHeight;
     private int tvLoadGeneration;
@@ -798,7 +799,7 @@ public class MainActivity extends Activity {
     private void onPanelTile(int i) {
         if (kidBlocked()) return;
         switch (i) {
-            case 0: startActivity(new Intent(this, ManageActivity.class)); break;
+            case 0: openAllAppsPage(); break;
             case 1: UI.actionFresh(this, Settings.ACTION_SETTINGS); break;
             case 2: startActivity(new Intent(this, SettingsActivity.class)); break;
         }
@@ -806,49 +807,37 @@ public class MainActivity extends Activity {
 
     /** Нижняя панель следует за сеткой: чем больше рядов, тем ниже она уезжает. */
     private void layoutContent() {
-        int n = visible.size();
-        int rows = Math.max(1, (n + cols - 1) / cols);
-        float gridEnd = gridTop() + rows * rowPitch - gap;
-        // матовая панель за сеткой
-        float px = mx - 30 * s, py = 62 * s, pw = W - 2 * mx + 60 * s, ph = gridEnd + 34 * s - py;
-        FrameLayout.LayoutParams fl = (FrameLayout.LayoutParams) frost.getLayoutParams();
-        fl.leftMargin = Math.round(px);
-        fl.topMargin = Math.round(py);
-        fl.width = Math.round(pw);
-        fl.height = Math.round(ph);
-        frost.radius = 44 * s;
-        frost.setLayoutParams(fl);
-        frost.setVisibility(View.VISIBLE);
-        float panelY = gridEnd + 34 * s + botGap, hdrY = panelY - 46 * s, panelH = 104 * s;
-        boolean pt = prefs.panelTop();
-        setHdr.setVisibility(pt || !prefs.showHdrs() ? View.GONE : View.VISIBLE);
-        for (GlassView g : setTiles) show(g, !pt);
-        if (pt) {
-            // нижней панели нет: ни заголовка, ни кнопок, ни отступа под ними — ниже матовой панели остаётся лишь небольшой край
-            contentH = Math.round(gridEnd + 34 * s + END_PAD * s);
-        } else {
-            moveTo(setHdr, mx, hdrY);
-            for (int i = 0; i < SET_COUNT; i++) moveTo(setTiles[i], mx + i * (324 * s), panelY);
-            contentH = Math.round(panelY + panelH + BOTTOM_PAD * s);     // фиксированный отступ снизу после «Настроек»
+        // Kotlin home: pinned All apps banner, app banners, then Android TV channel rails.
+        // MainActivity continues to own the top controls, settings and remote-key policy.
+        if (kotlinHome == null) {
+            kotlinHome = new LauncherRowsView(this, this, prefs);
+            FrameLayout.LayoutParams hp = new FrameLayout.LayoutParams(-1, -2);
+            hp.topMargin = Math.round(8 * s);
+            content.addView(kotlinHome, hp);
         }
-        // ScrollView меряет содержимое без учёта заданной высоты (по самому нижнему элементу), поэтому нижний отступ задаём минимальной высотой
+        kotlinHome.render(visible, launcherChannels);
+        frost.setVisibility(View.GONE);
+        for (AppTile old : tiles) old.setVisibility(View.GONE);
+        setHdr.setVisibility(View.GONE);
+        for (GlassView g : setTiles) g.setVisibility(View.GONE);
+        if (tvShelf != null) { content.removeView(tvShelf); tvShelf = null; }
+        tvShelfHeight = 0;
+        contentH = Math.max(Math.round(kotlinHome.contentHeight() + 70 * s), Math.round(H - vy));
         content.setMinimumHeight(contentH);
         ViewGroup.LayoutParams lp = content.getLayoutParams();
-        lp.height = Math.max(contentH, Math.round(H - vy));
+        lp.height = contentH;
         content.setLayoutParams(lp);
         content.requestLayout();
-        float channelsTop = pt
-                ? gridEnd + 34 * s + END_PAD * s
-                : panelY + panelH + BOTTOM_PAD * s;
-        buildTvShelf(channelsTop);
-        if (tvShelfHeight > 0) {
-            contentH = Math.max(contentH, Math.round(channelsTop + tvShelfHeight + 50 * s));
-            content.setMinimumHeight(contentH);
-            ViewGroup.LayoutParams resized = content.getLayoutParams();
-            resized.height = Math.max(contentH, Math.round(H - vy));
-            content.setLayoutParams(resized);
-        }
     }
+
+    public void openAllAppsPage() {
+        if (!kidBlocked()) startActivity(new Intent(this, AllAppsActivity.class));
+    }
+
+    public void launchFromKotlin(AppRepo.AppItem item) { launch(item); }
+    public void openKotlinAppMenu(AppTile tile) { appMenu(tile); }
+    public void onKotlinAppFocused(String title) { setShelf(title == null ? "" : title); }
+    public void launchTvProgramFromKotlin(TvChannels.Program program) { launchTvProgram(program); }
 
     private void refreshTvChannels() {
         final int generation = ++tvLoadGeneration;
@@ -1110,28 +1099,46 @@ public class MainActivity extends Activity {
 
     private void appMenu(final AppTile t) {
         if (kidBlocked()) return;
-        String[] items = {L.t("Открыть"), L.t("Переместить"), L.t("Скрыть"), L.t("Удалить"), L.t("О приложении")};
+        final boolean legacyTile = tiles.contains(t);
+        String[] items = legacyTile
+                ? new String[]{L.t("Открыть"), L.t("Переместить"), L.t("Скрыть"), L.t("Удалить"), L.t("О приложении")}
+                : new String[]{L.t("Открыть"), L.t("Скрыть"), L.t("Удалить"), L.t("О приложении")};
         show(GlassDialog.menu(this, t.item.label, items, i -> {
-            switch (i) {
-                case 0: launch(t.item); break;
-                case 1: startMove(t); break;
-                case 2: {
-                    java.util.Set<String> hs = prefs.hidden();
-                    hs.add(t.item.pkg);
-                    prefs.setHidden(hs);
-                    pendingFocus = Math.max(0, tiles.indexOf(t));      // выбор переходит на соседнее приложение (то, что встало на место скрытого)
-                    applyApps();
-                    break;
+            if (legacyTile) {
+                switch (i) {
+                    case 0: launch(t.item); break;
+                    case 1: startMove(t); break;
+                    case 2: hideKotlinApp(t); break;
+                    case 3: deleteKotlinApp(t); break;
+                    case 4: showKotlinAppInfo(t); break;
                 }
-                case 3:
-                    deletePkg = t.item.pkg;
-                    deleteIdx = Math.max(0, tiles.indexOf(t));
-                    deleteAt = System.currentTimeMillis();
-                    UI.start(this, new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + t.item.pkg)));
-                    break;
-                case 4: UI.start(this, new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + t.item.pkg))); break;
+            } else {
+                switch (i) {
+                    case 0: launch(t.item); break;
+                    case 1: hideKotlinApp(t); break;
+                    case 2: deleteKotlinApp(t); break;
+                    case 3: showKotlinAppInfo(t); break;
+                }
             }
         }));
+    }
+
+    private void hideKotlinApp(AppTile t) {
+        java.util.Set<String> hs = prefs.hidden();
+        hs.add(t.item.pkg);
+        prefs.setHidden(hs);
+        loadApps();
+    }
+
+    private void deleteKotlinApp(AppTile t) {
+        deletePkg = t.item.pkg;
+        deleteIdx = Math.max(0, tiles.indexOf(t));
+        deleteAt = System.currentTimeMillis();
+        UI.start(this, new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + t.item.pkg)));
+    }
+
+    private void showKotlinAppInfo(AppTile t) {
+        UI.start(this, new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + t.item.pkg)));
     }
 
     // ------------------------------------------------------------ перемещение приложений
