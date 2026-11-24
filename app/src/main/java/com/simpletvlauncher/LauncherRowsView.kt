@@ -15,7 +15,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.net.URL
-import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
@@ -27,11 +27,11 @@ import java.util.concurrent.TimeUnit
  */
 private object LauncherPosterQueue {
     // Keep poster decoding away from the shared catalogue/weather executor.
+    // No poster request is silently discarded: the queue drains steadily in the background.
     val executor = ThreadPoolExecutor(
-        2, 2, 0L, TimeUnit.MILLISECONDS,
-        ArrayBlockingQueue<Runnable>(24),
-        { task -> Thread(task, "launcher-poster").apply { isDaemon = true } },
-        ThreadPoolExecutor.DiscardOldestPolicy()
+        3, 3, 0L, TimeUnit.MILLISECONDS,
+        LinkedBlockingQueue<Runnable>(),
+        { task -> Thread(task, "launcher-poster").apply { isDaemon = true } }
     )
 }
 
@@ -56,7 +56,7 @@ class LauncherRowsView(
     private var emptyChannelsRow: View? = null
 
     private val sideWidth = (200 * scale).toInt()
-    private val channelRowHeight = (260 * scale).toInt()
+    private val channelRowHeight = (280 * scale).toInt()
 
     init {
         orientation = VERTICAL
@@ -294,8 +294,9 @@ class LauncherRowsView(
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            clipChildren = false
-            clipToPadding = false
+            // Keep the channel identity column separate from the scrolling posters.
+            clipChildren = true
+            clipToPadding = true
             tag = "channel:" + channel.key
         }
 
@@ -356,7 +357,7 @@ class LauncherRowsView(
                 setImageDrawable(null)
             }
         }
-        panel.addView(icon, LayoutParams((78 * scale).toInt(), (78 * scale).toInt()))
+        panel.addView(icon, LayoutParams((68 * scale).toInt(), (68 * scale).toInt()))
         panel.addView(TextView(context).apply {
             text = channel.appName
             textSize = 21f * scale
@@ -396,18 +397,19 @@ class LauncherRowsView(
                 isFocusable = true
                 isClickable = true
                 background = GradientDrawable().apply {
-                    setColor(0x3AFFFFFF)
-                    cornerRadius = 12f * scale
-                    setStroke((1 * scale).toInt().coerceAtLeast(1), 0x44FFFFFF)
+                    // Poster-first card: transparent outside the artwork, focus outline only.
+                    setColor(Color.TRANSPARENT)
+                    cornerRadius = 8f * scale
+                    setStroke(0, Color.TRANSPARENT)
                 }
                 setPadding((4 * scale).toInt(), (4 * scale).toInt(), (4 * scale).toInt(), (4 * scale).toInt())
                 setOnFocusChangeListener { view, focused ->
                     val bg = view.background as? GradientDrawable
                     bg?.setStroke(
-                        (if (focused) 3 * scale else 1 * scale).toInt().coerceAtLeast(1),
-                        if (focused) 0xFFFFD28A.toInt() else 0x44FFFFFF
+                        (if (focused) 3 * scale else 0f).toInt().coerceAtLeast(0),
+                        if (focused) 0xFFFFD28A.toInt() else Color.TRANSPARENT
                     )
-                    view.alpha = if (focused) 1f else .9f
+                    view.alpha = 1f
                     if (focused) {
                         host.onKotlinAppFocused(program.title)
                         host.ensureKotlinFocusVisible(view)
@@ -418,10 +420,14 @@ class LauncherRowsView(
 
             val poster = ImageView(context).apply {
                 scaleType = ImageView.ScaleType.FIT_CENTER
-                setBackgroundColor(0x33202020)
+                setBackgroundColor(Color.TRANSPARENT)
                 isFocusable = false
+                // Keep a real visual fallback while the provider artwork is loading,
+                // or when that programme has no poster URL.
+                try { setImageDrawable(context.packageManager.getApplicationIcon(channel.packageName)) }
+                catch (_: Exception) { }
             }
-            card.addView(poster, LayoutParams(-1, (172 * scale).toInt()))
+            card.addView(poster, LayoutParams(-1, (196 * scale).toInt()))
             card.addView(TextView(context).apply {
                 text = program.title
                 textSize = 14f * scale
@@ -430,10 +436,10 @@ class LauncherRowsView(
                 gravity = Gravity.CENTER_VERTICAL
             }, LayoutParams(-1, (42 * scale).toInt()))
 
-            cards.addView(card, LayoutParams((204 * scale).toInt(), (224 * scale).toInt()).apply {
-                rightMargin = (8 * scale).toInt()
-                topMargin = (8 * scale).toInt()
-                bottomMargin = (8 * scale).toInt()
+            cards.addView(card, LayoutParams((236 * scale).toInt(), (246 * scale).toInt()).apply {
+                rightMargin = (12 * scale).toInt()
+                topMargin = (6 * scale).toInt()
+                bottomMargin = (6 * scale).toInt()
             })
             loadPoster(program.posterUri, poster, card)
         }
@@ -441,15 +447,15 @@ class LauncherRowsView(
 
     private fun updateDesiredHeight() {
         desiredHeight = (
-            202 + channelShelfContainers.size * 286 +
-                (if (emptyChannelsRow != null) 286 else 0) + 50
+            202 + channelShelfContainers.size * 316 +
+                (if (emptyChannelsRow != null) 316 else 0) + 50
             ).let { (it * scale).toInt() }
     }
 
     private fun horizontalRail(): HorizontalScrollView = HorizontalScrollView(context).apply {
         isHorizontalScrollBarEnabled = false
-        clipChildren = false
-        clipToPadding = false
+        clipChildren = true
+        clipToPadding = true
         setPadding(0, (4 * scale).toInt(), (8 * scale).toInt(), (4 * scale).toInt())
         descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
     }
@@ -466,8 +472,8 @@ class LauncherRowsView(
                     }
                     val bitmap = if (uri.scheme == "http" || uri.scheme == "https") {
                         URL(raw).openConnection().apply {
-                            connectTimeout = 3500
-                            readTimeout = 4500
+                            connectTimeout = 5500
+                            readTimeout = 8000
                             useCaches = true
                         }.getInputStream().use { BitmapFactory.decodeStream(it, null, options) }
                     } else {
@@ -481,12 +487,7 @@ class LauncherRowsView(
                             target.scaleType = if (ratio > 1.25f)
                                 ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
                             target.setImageBitmap(bitmap)
-                            // Follow the artwork shape: landscape programme banners are wide,
-                            // portrait posters stay compact like Android TV preview shelves.
-                            (card.layoutParams as? MarginLayoutParams)?.let { lp ->
-                                lp.width = ((if (ratio > 1.25f) 320f else 150f) * scale).toInt()
-                                card.layoutParams = lp
-                            }
+
                         } else bitmap.recycle()
                     }
                 } catch (_: Exception) { }
