@@ -72,6 +72,7 @@ public class MainActivity extends Activity {
     private List<TvChannels.Channel> launcherChannels = new ArrayList<>();
     private int tvShelfHeight;
     private int tvLoadGeneration;
+    private boolean loadingMoreTvChannels;
 
     /** ScrollView, у которого верхний край прокрутки плавно уходит в прозрачность (маска DST_OUT). */
     static class FadeScroll extends ScrollView {
