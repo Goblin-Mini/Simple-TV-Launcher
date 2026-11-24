@@ -71,7 +71,7 @@ final class TvChannels {
             int nameCol = cursor.getColumnIndexOrThrow(TvContract.Channels.COLUMN_DISPLAY_NAME);
             int typeCol = cursor.getColumnIndexOrThrow(TvContract.Channels.COLUMN_TYPE);
             while (cursor.moveToNext()) {
-                if (cursor.getInt(typeCol) != TvContract.Channels.TYPE_PREVIEW) continue;
+                if (!TvContract.Channels.TYPE_PREVIEW.equals(cursor.getString(typeCol))) continue;
                 long id = cursor.getLong(idCol);
                 String pkg = cursor.getString(pkgCol);
                 String internal = cursor.getString(internalCol);
