@@ -172,6 +172,7 @@ class LauncherRowsView(
         renderedChannels = 0
         moreButton = null
         lastAddedProgram = null
+        restoreMoreFocus = false
         appendMoreChannels()
     }
 
