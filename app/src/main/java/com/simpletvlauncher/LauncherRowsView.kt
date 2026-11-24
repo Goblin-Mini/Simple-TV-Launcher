@@ -214,15 +214,33 @@ class LauncherRowsView(
     }
 
     private fun updateLoadingLabel() {
-        if (channelModels.isNotEmpty() && channelShelfContainers.isEmpty()) {
+        if (channelShelfContainers.isEmpty()) {
             if (loadingChannelsLabel == null) {
                 loadingChannelsLabel = TextView(context).apply {
-                    text = "Загружаю выбранные каналы…"
+                    text = if (channelModels.isEmpty())
+                        "Каналы не выбраны. Открыть выбор каналов  ›"
+                    else
+                        "Загружаю выбранные каналы…"
                     textSize = 17f * scale
                     setTextColor(0xCCFFFFFF.toInt())
                     gravity = Gravity.CENTER_VERTICAL
+                    setPadding((4 * scale).toInt(), 0, (12 * scale).toInt(), 0)
+                    isFocusable = channelModels.isEmpty()
+                    isClickable = channelModels.isEmpty()
+                    if (channelModels.isEmpty()) {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            setColor(0x332E7770)
+                            cornerRadius = 12f * scale
+                        }
+                        setOnClickListener { host.openChannelSettingsFromKotlin() }
+                    }
                 }
                 channelContainer.addView(loadingChannelsLabel, LayoutParams(-1, (56 * scale).toInt()))
+            } else if (channelModels.isEmpty()) {
+                loadingChannelsLabel?.text = "Каналы не выбраны. Открыть выбор каналов  ›"
+                loadingChannelsLabel?.isFocusable = true
+                loadingChannelsLabel?.isClickable = true
+                loadingChannelsLabel?.setOnClickListener { host.openChannelSettingsFromKotlin() }
             }
         } else {
             loadingChannelsLabel?.let { channelContainer.removeView(it) }
