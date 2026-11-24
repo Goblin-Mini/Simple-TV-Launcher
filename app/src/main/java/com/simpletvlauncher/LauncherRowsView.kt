@@ -14,7 +14,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.net.URL
-import java.util.concurrent.Executors
 
 /**
  * Kotlin home content: a pinned All apps banner, one horizontal app-banner rail,
@@ -72,8 +71,6 @@ class LauncherRowsView(
             val target = if (!focusedTag.isNullOrBlank()) findViewWithTag<View>(focusedTag) else null
             if (target != null && target.isFocusable && !target.hasFocus()) {
                 target.requestFocus()
-            } else if (!hasFocus()) {
-                focusFirst()
             }
         }
     }
