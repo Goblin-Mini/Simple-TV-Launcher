@@ -464,11 +464,11 @@ public class MainActivity extends Activity {
         sv.scrollTo(0, 0);
         for (AppTile t : tiles) { t.setScaleX(1f); t.setScaleY(1f); }
         for (HighlightView hv : hls()) hv.hide();
-        if (!tiles.isEmpty()) {
+        if (kotlinHome != null) {
+            kotlinHome.focusFirst();
+        } else if (!tiles.isEmpty()) {
             AppTile first = tiles.get(0);
             first.requestFocus();
-            // если первая плитка уже была в фокусе, requestFocus ничего не делает — возвращаем ей масштаб выбранной
-            // (раньше она «поджималась» до обычного размера)
             if (first.isFocused()) first.applyFocusScale();
             moveHighlight(first);
         }
@@ -670,7 +670,7 @@ public class MainActivity extends Activity {
     private void updateNotice() {
         if (notice == null) return;
         boolean on = HomeFix.needed(this);
-        if (!on && notice.hasFocus() && !tiles.isEmpty()) tiles.get(0).requestFocus();
+        if (!on && notice.hasFocus()) { if (kotlinHome != null) kotlinHome.focusFirst(); else if (!tiles.isEmpty()) tiles.get(0).requestFocus(); }
         show(notice, on);
     }
 
@@ -828,6 +828,23 @@ public class MainActivity extends Activity {
         lp.height = contentH;
         content.setLayoutParams(lp);
         content.requestLayout();
+    }
+
+    /** Scroll the outer list when a Kotlin banner receives DPAD focus. */
+    public void ensureKotlinFocusVisible(View focused) {
+        if (focused == null || content == null || sv == null || focused.getParent() == null) return;
+        try {
+            android.graphics.Rect rect = new android.graphics.Rect(0, 0, focused.getWidth(), focused.getHeight());
+            content.offsetDescendantRectToMyCoords(focused, rect);
+            int viewport = sv.getHeight();
+            if (viewport <= 0) return;
+            int current = sv.getScrollY();
+            int margin = Math.round(42 * s);
+            int target = current;
+            if (rect.top < current + margin) target = Math.max(0, rect.top - margin);
+            else if (rect.bottom > current + viewport - margin) target = rect.bottom - viewport + margin;
+            if (target != current) sv.smoothScrollTo(0, Math.max(0, target));
+        } catch (IllegalArgumentException ignored) { }
     }
 
     public void openAllAppsPage() {
@@ -1045,16 +1062,14 @@ public class MainActivity extends Activity {
         rebuildTiles();
         layoutContent();
         sig = sigOf();
-        // нижние кнопки при смене числа рядов съезжают вниз/вверх, а подсветка — отдельный вид и остаётся на прежнем месте:
-        // если фокус на одной из них (не на плитке приложения), ведём подсветку за ней
         View cf = getCurrentFocus();
         if (cf != null && !(cf instanceof AppTile) && cf instanceof GlassView && cf.getParent() == content) moveHighlight(cf);
-        if (pendingFocus >= 0 && !tiles.isEmpty()) {
-            int fi = Math.min(pendingFocus, tiles.size() - 1);
+        if (pendingFocus >= 0) {
+            if (kotlinHome != null) kotlinHome.focusAppAt(Math.min(pendingFocus, Math.max(0, visible.size() - 1)));
             pendingFocus = -1;
-            tiles.get(fi).requestFocus();
-        } else if (getCurrentFocus() == null || !getCurrentFocus().isFocused() || (!userMoved && !tiles.isEmpty())) {
-            if (!tiles.isEmpty()) tiles.get(0).requestFocus(); else weatherPill.requestFocus();
+        } else if (kotlinHome != null &&
+                (cf == null || !cf.isFocused() || cf.getVisibility() != View.VISIBLE || !userMoved)) {
+            kotlinHome.focusFirst();
         }
     }
 
