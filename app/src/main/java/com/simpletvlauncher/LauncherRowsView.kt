@@ -1,9 +1,10 @@
 package com.simpletvlauncher
 
 import android.content.Context
-import android.content.Intent
-import android.graphics.Color
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.view.Gravity
 import android.view.View
@@ -19,13 +20,13 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /**
- * Kotlin home content: a pinned All apps banner, one horizontal app-banner rail,
- * followed immediately by independently scrollable Android TV preview-channel rails.
- * The existing Java activity continues to own the status/header controls and remote-key policy.
+ * Android TV-style home:
+ * - the applications rail has a fixed identity panel on the left and app banners on the right;
+ * - every selected preview channel is a separate row, with its publisher on the left
+ *   and that channel's programmes on the right.
  */
 private object LauncherPosterQueue {
-    // Отдельная очередь постеров не занимает общий IO-пул погоды и каталога.
-    // Ограниченная очередь не позволяет большому числу каналов создать сотни задач.
+    // Keep poster decoding away from the shared catalogue/weather executor.
     val executor = ThreadPoolExecutor(
         2, 2, 0L, TimeUnit.MILLISECONDS,
         ArrayBlockingQueue<Runnable>(24),
@@ -40,6 +41,7 @@ class LauncherRowsView(
     private val prefs: Prefs
 ) : LinearLayout(context) {
     private val scale = UI.scale(context)
+    private val appRow = LinearLayout(context)
     private val appRail = LinearLayout(context)
     private val channelContainer = LinearLayout(context)
     private var desiredHeight = 0
@@ -47,38 +49,47 @@ class LauncherRowsView(
     private var channelsSignature = ""
     private var appsBuilt = false
     private var channelsBuilt = false
-    private var allAppsButton: TextView? = null
+    private var allAppsButton: View? = null
     private val channelCardContainers = LinkedHashMap<String, LinearLayout>()
     private val channelShelfContainers = LinkedHashMap<String, LinearLayout>()
     private var channelModels: List<TvChannels.Channel> = emptyList()
-    private var loadingChannelsLabel: TextView? = null
+    private var emptyChannelsRow: View? = null
+
+    private val sideWidth = (280 * scale).toInt()
+    private val channelRowHeight = (224 * scale).toInt()
 
     init {
         orientation = VERTICAL
-        // Each selected Android TV channel is a separate vertical shelf.
-        // Leaving this at LinearLayout's default horizontal orientation pushed
-        // the shelves beyond the right edge of the screen.
-        appRail.orientation = HORIZONTAL
-        channelContainer.orientation = VERTICAL
         clipChildren = false
         clipToPadding = false
-        setPadding((68 * scale).toInt(), (18 * scale).toInt(), (68 * scale).toInt(), (42 * scale).toInt())
-        addView(sectionTitle("Приложения"), LayoutParams(-1, (42 * scale).toInt()))
+        setPadding((58 * scale).toInt(), (12 * scale).toInt(),
+            (58 * scale).toInt(), (38 * scale).toInt())
+
+        appRow.orientation = HORIZONTAL
+        appRow.gravity = Gravity.CENTER_VERTICAL
+        appRow.clipChildren = false
+        appRow.clipToPadding = false
+
+        val appsSide = buildAppsSidePanel()
+        appRow.addView(appsSide, LayoutParams(sideWidth, (190 * scale).toInt()))
+
         val appScroll = horizontalRail()
-        appScroll.addView(appRail, FrameLayout.LayoutParams(-2, -2))
-        addView(appScroll, LayoutParams(-1, (188 * scale).toInt()))
+        appScroll.addView(appRail, FrameLayout.LayoutParams(-2, -1))
+        appRow.addView(appScroll, LayoutParams(0, (190 * scale).toInt(), 1f))
+        addView(appRow, LayoutParams(-1, (202 * scale).toInt()))
+
+        channelContainer.orientation = VERTICAL
+        channelContainer.clipChildren = false
+        channelContainer.clipToPadding = false
         addView(channelContainer, LayoutParams(-1, -2))
     }
 
     fun contentHeight(): Int = desiredHeight
 
     fun render(apps: List<AppRepo.AppItem>, channels: List<TvChannels.Channel>) {
-        // Rebuild only the rail whose data changed. TV refreshes must not detach the
-        // currently focused app tile while the user is navigating with the remote.
         val focusedTag = findFocus()?.tag as? String
         val nextAppsSignature = apps.joinToString("|") { it.pkg + ":" + it.cls + ":" + it.label }
-        // Only channels explicitly selected in settings are passed here.
-        val nextChannelsSignature = channels.joinToString("|") { channel -> channel.key }
+        val nextChannelsSignature = channels.joinToString("|") { it.key }
 
         if (!appsBuilt || nextAppsSignature != appsSignature) {
             buildAppRail(apps)
@@ -90,15 +101,12 @@ class LauncherRowsView(
             channelsSignature = nextChannelsSignature
             channelsBuilt = true
         }
-        // A TV row consists of a 12dp title gap, a 42dp title and a 178dp card rail.
         updateDesiredHeight()
         requestLayout()
 
         post {
             val target = if (!focusedTag.isNullOrBlank()) findViewWithTag<View>(focusedTag) else null
-            if (target != null && target.isFocusable && !target.hasFocus()) {
-                target.requestFocus()
-            }
+            if (target != null && target.isFocusable && !target.hasFocus()) target.requestFocus()
         }
     }
 
@@ -109,68 +117,62 @@ class LauncherRowsView(
     }
 
     fun focusAppAt(index: Int) {
-        val target = appRail.getChildAt(index + 1)
+        val target = appRail.getChildAt(index)
         if (target != null && target.isFocusable) target.requestFocus() else focusFirst()
     }
 
-    fun hasFocusedItem(): Boolean = findFocus() != null
+    fun needsChannelPrograms(channel: TvChannels.Channel): Boolean =
+        !channelCardContainers.containsKey(channel.key)
 
-    fun needsChannelPrograms(channel: TvChannels.Channel): Boolean = !channelCardContainers.containsKey(channel.key)
-
-    private fun buildAppRail(apps: List<AppRepo.AppItem>) {
-        appRail.removeAllViews()
-        val all = TextView(context).apply {
-            tag = "all_apps"
-            text = "Все программы"
-            textSize = 20f * scale
-            setTextColor(Color.WHITE)
+    private fun buildAppsSidePanel(): View {
+        val panel = LinearLayout(context).apply {
+            orientation = VERTICAL
             gravity = Gravity.CENTER
             isFocusable = true
             isClickable = true
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(0x553F6F68)
-                cornerRadius = 18f * scale
-                setStroke((2 * scale).toInt().coerceAtLeast(1), 0x88FFFFFF.toInt())
-            }
-            setOnFocusChangeListener { v, focused ->
-                val bg = v.background as? android.graphics.drawable.GradientDrawable
-                bg?.setColor(if (focused) 0xFFEEE8DE.toInt() else 0x553F6F68)
-                bg?.setStroke(
-                    (if (focused) 4 * scale else 2 * scale).toInt().coerceAtLeast(1),
-                    if (focused) 0xFFFFD28A.toInt() else 0x88FFFFFF.toInt()
-                )
-                setTextColor(if (focused) 0xFF182321.toInt() else Color.WHITE)
-                if (focused) host.ensureKotlinFocusVisible(v)
-            }
+            tag = "all_apps"
             setOnClickListener { host.openAllAppsPage() }
         }
-        allAppsButton = all
-        val pinned = LinearLayout(context).apply {
-            orientation = VERTICAL
+        val icon = TextView(context).apply {
+            text = "▦"
+            textSize = 48f * scale
             gravity = Gravity.CENTER
-            addView(TextView(context).apply {
-                text = "▦"
-                textSize = 42f * scale
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
-                isFocusable = false
-            })
-            addView(all, LayoutParams((220 * scale).toInt(), (54 * scale).toInt()))
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xFFE53935.toInt())
+            }
+            isFocusable = false
         }
-        appRail.addView(pinned, LayoutParams((240 * scale).toInt(), (172 * scale).toInt()).apply {
-            rightMargin = (18 * scale).toInt()
-        })
+        panel.addView(icon, LayoutParams((112 * scale).toInt(), (112 * scale).toInt()))
+        val label = TextView(context).apply {
+            text = "Приложения"
+            textSize = 22f * scale
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            isFocusable = false
+        }
+        panel.addView(label, LayoutParams(-1, (48 * scale).toInt()))
+        panel.setOnFocusChangeListener { view, focused ->
+            view.alpha = if (focused) 1f else .88f
+            if (focused) host.ensureKotlinFocusVisible(view)
+        }
+        allAppsButton = panel
+        return panel
+    }
 
+    private fun buildAppRail(apps: List<AppRepo.AppItem>) {
+        appRail.removeAllViews()
         apps.forEach { item ->
             val tile = MainActivity.AppTile(context, item, prefs.themeColor()).apply {
                 tag = "app:" + item.pkg
                 radius = 18f * scale
                 isFocusable = true
                 setOnClickListener { host.launchFromKotlin(item) }
-                setOnFocusChangeListener { v, focused ->
+                setOnFocusChangeListener { view, focused ->
                     if (focused) {
                         host.onKotlinAppFocused(item.label)
-                        host.ensureKotlinFocusVisible(v)
+                        host.ensureKotlinFocusVisible(view)
                     }
                 }
                 setOnLongClickListener {
@@ -180,31 +182,33 @@ class LauncherRowsView(
             }
             appRail.addView(tile, LayoutParams((276 * scale).toInt(), (164 * scale).toInt()).apply {
                 rightMargin = (16 * scale).toInt()
-                topMargin = (4 * scale).toInt()
+                topMargin = (8 * scale).toInt()
+                bottomMargin = (8 * scale).toInt()
             })
         }
     }
 
     private fun buildChannelRails(channels: List<TvChannels.Channel>) {
-        // Diff the selected set rather than replacing the whole channel area.
-        // Existing rows remain on screen when the user adds or removes one channel.
         val wanted = channels.map { it.key }.toSet()
         val focusedTag = findFocus()?.tag as? String
+
         val removed = channelShelfContainers.keys.filter { it !in wanted }
         removed.forEach { key ->
             channelShelfContainers.remove(key)?.let { channelContainer.removeView(it) }
             channelCardContainers.remove(key)
         }
         channelModels = channels
-        // Reapply the stored Android TV channel order without rebuilding card contents.
+
+        // Reorder existing channel rows without rebuilding their programme cards.
         channels.forEach { channel ->
-            channelShelfContainers[channel.key]?.let { shelf ->
-                channelContainer.removeView(shelf)
-                channelContainer.addView(shelf)
+            channelShelfContainers[channel.key]?.let { row ->
+                channelContainer.removeView(row)
+                channelContainer.addView(row)
             }
         }
-        updateLoadingLabel()
+        updateEmptyChannelsRow()
         updateDesiredHeight()
+
         if (!focusedTag.isNullOrBlank()) {
             post {
                 val target = findViewWithTag<View>(focusedTag)
@@ -213,67 +217,96 @@ class LauncherRowsView(
         }
     }
 
-    private fun updateLoadingLabel() {
+    private fun updateEmptyChannelsRow() {
         if (channelShelfContainers.isEmpty()) {
-            if (loadingChannelsLabel == null) {
-                loadingChannelsLabel = TextView(context).apply {
+            if (emptyChannelsRow == null) {
+                val row = LinearLayout(context).apply {
+                    orientation = HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                val left = LinearLayout(context).apply {
+                    orientation = VERTICAL
+                    gravity = Gravity.CENTER
+                    addView(TextView(context).apply {
+                        text = "▤"
+                        textSize = 42f * scale
+                        setTextColor(0xFFE7E7E7.toInt())
+                        gravity = Gravity.CENTER
+                    }, LayoutParams((100 * scale).toInt(), (88 * scale).toInt()))
+                    addView(TextView(context).apply {
+                        text = "Каналы"
+                        textSize = 21f * scale
+                        setTextColor(Color.WHITE)
+                        gravity = Gravity.CENTER
+                    }, LayoutParams(-1, (42 * scale).toInt()))
+                }
+                row.addView(left, LayoutParams(sideWidth, channelRowHeight))
+                val action = TextView(context).apply {
                     text = if (channelModels.isEmpty())
-                        "Каналы не выбраны. Открыть выбор каналов  ›"
+                        "Выбрать каналы приложений  ›"
                     else
                         "Загружаю выбранные каналы…"
-                    textSize = 17f * scale
-                    setTextColor(0xCCFFFFFF.toInt())
+                    textSize = 20f * scale
+                    setTextColor(Color.WHITE)
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding((4 * scale).toInt(), 0, (12 * scale).toInt(), 0)
+                    setPadding((20 * scale).toInt(), 0, (20 * scale).toInt(), 0)
                     isFocusable = channelModels.isEmpty()
                     isClickable = channelModels.isEmpty()
-                    if (channelModels.isEmpty()) {
-                        background = android.graphics.drawable.GradientDrawable().apply {
-                            setColor(0x332E7770)
-                            cornerRadius = 12f * scale
-                        }
-                        setOnClickListener { host.openChannelSettingsFromKotlin() }
+                    background = GradientDrawable().apply {
+                        setColor(0x332E7770)
+                        cornerRadius = 14f * scale
+                    }
+                    if (channelModels.isEmpty()) setOnClickListener {
+                        host.openChannelSettingsFromKotlin()
                     }
                 }
-                channelContainer.addView(loadingChannelsLabel, LayoutParams(-1, (56 * scale).toInt()))
-            } else if (channelModels.isEmpty()) {
-                loadingChannelsLabel?.text = "Каналы не выбраны. Открыть выбор каналов  ›"
-                loadingChannelsLabel?.isFocusable = true
-                loadingChannelsLabel?.isClickable = true
-                loadingChannelsLabel?.setOnClickListener { host.openChannelSettingsFromKotlin() }
+                row.addView(action, LayoutParams(0, (64 * scale).toInt(), 1f))
+                channelContainer.addView(row, LayoutParams(-1, channelRowHeight))
+                emptyChannelsRow = row
+            } else {
+                val action = (emptyChannelsRow as? ViewGroup)?.getChildAt(1) as? TextView
+                action?.text = if (channelModels.isEmpty())
+                    "Выбрать каналы приложений  ›"
+                else
+                    "Загружаю выбранные каналы…"
+                action?.isFocusable = channelModels.isEmpty()
+                action?.isClickable = channelModels.isEmpty()
+                action?.setOnClickListener(if (channelModels.isEmpty()) {
+                    OnClickListener { host.openChannelSettingsFromKotlin() }
+                } else null)
             }
         } else {
-            loadingChannelsLabel?.let { channelContainer.removeView(it) }
-            loadingChannelsLabel = null
+            emptyChannelsRow?.let { channelContainer.removeView(it) }
+            emptyChannelsRow = null
         }
     }
 
-    /** Add one selected channel only after its program data is ready. */
+    /** Add one selected channel in the Android TV layout: app identity left, programmes right. */
     fun updateChannelPrograms(channel: TvChannels.Channel) {
         if (channelShelfContainers.containsKey(channel.key)) return
-        if (loadingChannelsLabel != null) {
-            channelContainer.removeView(loadingChannelsLabel)
-            loadingChannelsLabel = null
-        }
+        emptyChannelsRow?.let { channelContainer.removeView(it) }
+        emptyChannelsRow = null
 
-        val shelf = LinearLayout(context).apply {
-            orientation = VERTICAL
+        val row = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
             clipToPadding = false
+            tag = "channel:" + channel.key
         }
-        val title = sectionTitle(channel.name)
-        title.contentDescription = channel.name + " — " + channel.appName
-        shelf.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
-            topMargin = (12 * scale).toInt()
-        })
+
+        val identity = buildChannelIdentity(channel)
+        row.addView(identity, LayoutParams(sideWidth, channelRowHeight))
+
         val scroll = horizontalRail()
         val cards = LinearLayout(context).apply {
             orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
             clipToPadding = false
         }
-        scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
-        shelf.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
+        scroll.addView(cards, FrameLayout.LayoutParams(-2, -1))
+        row.addView(scroll, LayoutParams(0, channelRowHeight, 1f))
 
         val desiredIndex = channelModels.indexOfFirst { it.key == channel.key }
         var insertAt = 0
@@ -282,17 +315,54 @@ class LauncherRowsView(
                 if (channelShelfContainers.containsKey(channelModels[i].key)) insertAt++
             }
         }
-        channelContainer.addView(shelf, insertAt)
-        channelShelfContainers[channel.key] = shelf
+        channelContainer.addView(row, insertAt, LayoutParams(-1, channelRowHeight))
+        channelShelfContainers[channel.key] = row
         channelCardContainers[channel.key] = cards
 
         if (channel.programs.isEmpty()) {
-            addChannelPlaceholder(cards, "Программы пока не опубликованы")
+            addChannelPlaceholder(cards, "В этом канале пока нет программ")
         } else {
             populateChannelCards(channel, cards)
         }
         updateDesiredHeight()
         requestLayout()
+    }
+
+    private fun buildChannelIdentity(channel: TvChannels.Channel): View {
+        val panel = LinearLayout(context).apply {
+            orientation = VERTICAL
+            gravity = Gravity.CENTER
+            clipChildren = false
+            clipToPadding = false
+        }
+        val icon = ImageView(context).apply {
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            isFocusable = false
+            try {
+                val drawable = context.packageManager.getApplicationIcon(channel.packageName)
+                setImageDrawable(drawable)
+            } catch (_: Exception) {
+                setImageDrawable(null)
+            }
+        }
+        panel.addView(icon, LayoutParams((112 * scale).toInt(), (104 * scale).toInt()))
+        panel.addView(TextView(context).apply {
+            text = channel.appName
+            textSize = 21f * scale
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            maxLines = 2
+        }, LayoutParams((sideWidth - 12 * scale).toInt(), (42 * scale).toInt()))
+        if (channel.name.isNotBlank() && !channel.name.equals(channel.appName, true)) {
+            panel.addView(TextView(context).apply {
+                text = channel.name
+                textSize = 14f * scale
+                setTextColor(0x99FFFFFF.toInt())
+                gravity = Gravity.CENTER
+                maxLines = 1
+            }, LayoutParams((sideWidth - 12 * scale).toInt(), (28 * scale).toInt()))
+        }
+        return panel
     }
 
     private fun addChannelPlaceholder(cards: LinearLayout, message: String) {
@@ -304,88 +374,84 @@ class LauncherRowsView(
             setPadding((18 * scale).toInt(), 0, (18 * scale).toInt(), 0)
             isFocusable = false
         }
-        cards.addView(placeholder, LayoutParams((320 * scale).toInt(), (166 * scale).toInt()))
+        cards.addView(placeholder, LayoutParams((300 * scale).toInt(), (80 * scale).toInt()))
     }
 
     private fun populateChannelCards(channel: TvChannels.Channel, cards: LinearLayout) {
-        channel.programs.take(6).forEachIndexed { index, program ->
+        channel.programs.take(8).forEachIndexed { index, program ->
             val card = LinearLayout(context).apply {
                 tag = "program:" + channel.key + ":" + index
                 orientation = VERTICAL
                 isFocusable = true
                 isClickable = true
-                background = android.graphics.drawable.GradientDrawable().apply {
+                background = GradientDrawable().apply {
                     setColor(0x3AFFFFFF)
-                    cornerRadius = 14f * scale
+                    cornerRadius = 12f * scale
                     setStroke((1 * scale).toInt().coerceAtLeast(1), 0x44FFFFFF)
                 }
-                setPadding((6 * scale).toInt(), (6 * scale).toInt(), (6 * scale).toInt(), (6 * scale).toInt())
-                setOnFocusChangeListener { v, focused ->
-                    val bg = v.background as? android.graphics.drawable.GradientDrawable
+                setPadding((4 * scale).toInt(), (4 * scale).toInt(), (4 * scale).toInt(), (4 * scale).toInt())
+                setOnFocusChangeListener { view, focused ->
+                    val bg = view.background as? GradientDrawable
                     bg?.setStroke(
                         (if (focused) 3 * scale else 1 * scale).toInt().coerceAtLeast(1),
                         if (focused) 0xFFFFD28A.toInt() else 0x44FFFFFF
                     )
-                    v.alpha = if (focused) 1f else .86f
+                    view.alpha = if (focused) 1f else .9f
                     if (focused) {
                         host.onKotlinAppFocused(program.title)
-                        host.ensureKotlinFocusVisible(v)
+                        host.ensureKotlinFocusVisible(view)
                     }
                 }
                 setOnClickListener { host.launchTvProgramFromKotlin(program) }
             }
+
             val poster = ImageView(context).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
+                scaleType = ImageView.ScaleType.FIT_CENTER
                 setBackgroundColor(0x33202020)
                 isFocusable = false
             }
-            card.addView(poster, LayoutParams(-1, (112 * scale).toInt()))
-            val label = TextView(context).apply {
+            card.addView(poster, LayoutParams(-1, (148 * scale).toInt()))
+            card.addView(TextView(context).apply {
                 text = program.title
-                textSize = 15f * scale
+                textSize = 14f * scale
                 setTextColor(Color.WHITE)
                 maxLines = 2
                 gravity = Gravity.CENTER_VERTICAL
-                isFocusable = false
-            }
-            card.addView(label, LayoutParams(-1, (44 * scale).toInt()))
-            cards.addView(card, LayoutParams((196 * scale).toInt(), (166 * scale).toInt()).apply {
+            }, LayoutParams(-1, (42 * scale).toInt()))
+
+            cards.addView(card, LayoutParams((204 * scale).toInt(), (198 * scale).toInt()).apply {
                 rightMargin = (12 * scale).toInt()
+                topMargin = (8 * scale).toInt()
+                bottomMargin = (8 * scale).toInt()
             })
-            loadPoster(program.posterUri, poster)
+            loadPoster(program.posterUri, poster, card)
         }
     }
 
     private fun updateDesiredHeight() {
-        desiredHeight = (42 + 188 + 18 + channelShelfContainers.size * 232 + (if (loadingChannelsLabel != null) 56 else 0) + 42).let { (it * scale).toInt() }
-    }
-
-    private fun sectionTitle(value: String): TextView = TextView(context).apply {
-        text = value
-        textSize = 25f * scale
-        setTextColor(Color.WHITE)
-        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
-        gravity = Gravity.CENTER_VERTICAL
+        desiredHeight = (
+            202 + channelShelfContainers.size * 224 +
+                (if (emptyChannelsRow != null) 224 else 0) + 50
+            ).let { (it * scale).toInt() }
     }
 
     private fun horizontalRail(): HorizontalScrollView = HorizontalScrollView(context).apply {
         isHorizontalScrollBarEnabled = false
         clipChildren = false
         clipToPadding = false
-        setPadding(0, (4 * scale).toInt(), (8 * scale).toInt(), (8 * scale).toInt())
+        setPadding(0, (4 * scale).toInt(), (8 * scale).toInt(), (4 * scale).toInt())
         descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
     }
 
-    private fun loadPoster(raw: String?, target: ImageView) {
+    private fun loadPoster(raw: String?, target: ImageView, card: View) {
         if (raw.isNullOrBlank()) return
         try {
             LauncherPosterQueue.executor.execute {
                 try {
                     val uri = Uri.parse(raw)
-                    // Карточки на ТВ небольшие: уменьшаем декодирование и расход памяти.
                     val options = BitmapFactory.Options().apply {
                         inSampleSize = 2
-                        inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                        inPreferredConfig = Bitmap.Config.RGB_565
                     }
                     val bitmap = if (uri.scheme == "http" || uri.scheme == "https") {
                         URL(raw).openConnection().apply {
@@ -399,12 +465,16 @@ class LauncherRowsView(
                         }
                     }
                     if (bitmap != null) host.runOnUiThread {
-                        if (target.isAttachedToWindow) target.setImageBitmap(bitmap) else bitmap.recycle()
+                        if (target.isAttachedToWindow) {
+                            target.scaleType = if (bitmap.width.toFloat() / bitmap.height.coerceAtLeast(1) > 1.25f)
+                                ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
+                            target.setImageBitmap(bitmap)
+                        } else bitmap.recycle()
                     }
                 } catch (_: Exception) { }
             }
         } catch (_: Exception) {
-            // При переполнении очереди пропускаем постер, не блокируя интерфейс.
+            // Queue full: skip this poster rather than blocking the UI thread.
         }
     }
 }
