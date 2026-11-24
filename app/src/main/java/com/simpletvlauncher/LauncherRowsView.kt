@@ -34,6 +34,11 @@ class LauncherRowsView(
     private var appsBuilt = false
     private var channelsBuilt = false
     private var allAppsButton: TextView? = null
+    private var allChannels: List<TvChannels.Channel> = emptyList()
+    private var renderedChannels = 0
+    private var moreButton: TextView? = null
+    private var lastAddedProgram: View? = null
+    private val channelBatchSize = 6
 
     init {
         orientation = VERTICAL
@@ -54,9 +59,8 @@ class LauncherRowsView(
         // currently focused app tile while the user is navigating with the remote.
         val focusedTag = findFocus()?.tag as? String
         val nextAppsSignature = apps.joinToString("|") { it.pkg + ":" + it.cls + ":" + it.label }
-        val nextChannelsSignature = channels.joinToString("|") { channel ->
-            channel.key + ":" + channel.programs.joinToString(";") { it.title + "@" + it.posterUri }
-        }
+        // Program lists are populated in later batches, so the signature is based only on channel identity/order.
+        val nextChannelsSignature = channels.joinToString("|") { channel -> channel.key }
 
         if (!appsBuilt || nextAppsSignature != appsSignature) {
             buildAppRail(apps)
@@ -69,7 +73,7 @@ class LauncherRowsView(
             channelsBuilt = true
         }
         // A TV row consists of a 12dp title gap, a 42dp title and a 178dp card rail.
-        desiredHeight = (42 + 188 + 18 + channels.size * 232 + 42).let { (it * scale).toInt() }
+        updateDesiredHeight()
         requestLayout()
 
         post {
@@ -157,62 +161,156 @@ class LauncherRowsView(
 
     private fun buildChannelRails(channels: List<TvChannels.Channel>) {
         channelContainer.removeAllViews()
-        channels.forEach { channel ->
-            val title = sectionTitle(channel.name)
-            title.contentDescription = channel.name + " — " + channel.appName
-            channelContainer.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
-                topMargin = (12 * scale).toInt()
-            })
-            val scroll = horizontalRail()
-            val cards = LinearLayout(context).apply {
-                orientation = HORIZONTAL
-                clipChildren = false
-                clipToPadding = false
-            }
-            channel.programs.take(12).forEachIndexed { index, program ->
-                val card = LinearLayout(context).apply {
-                    tag = "program:" + channel.key + ":" + index
-                    orientation = VERTICAL
-                    isFocusable = true
-                    isClickable = true
-                    background = android.graphics.drawable.GradientDrawable().apply {
-                        setColor(0x3AFFFFFF)
-                        cornerRadius = 14f * scale
-                        setStroke((1 * scale).toInt().coerceAtLeast(1), 0x44FFFFFF)
-                    }
-                    setPadding((6 * scale).toInt(), (6 * scale).toInt(), (6 * scale).toInt(), (6 * scale).toInt())
-                    setOnFocusChangeListener { v, focused ->
-                        v.alpha = if (focused) 1f else .82f
-                        if (focused) {
-                            host.onKotlinAppFocused(program.title)
-                            host.ensureKotlinFocusVisible(v)
-                        }
-                    }
-                    setOnClickListener { host.launchTvProgramFromKotlin(program) }
-                }
-                val poster = ImageView(context).apply {
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    setBackgroundColor(0x33202020)
-                    isFocusable = false
-                }
-                card.addView(poster, LayoutParams(-1, (112 * scale).toInt()))
-                val label = TextView(context).apply {
-                    text = program.title
-                    textSize = 15f * scale
-                    setTextColor(Color.WHITE)
-                    maxLines = 2
-                    gravity = Gravity.CENTER_VERTICAL
-                    isFocusable = false
-                }
-                card.addView(label, LayoutParams(-1, (44 * scale).toInt()))
-                cards.addView(card, LayoutParams((196 * scale).toInt(), (166 * scale).toInt()).apply {
-                    rightMargin = (12 * scale).toInt()
-                })
-                loadPoster(program.posterUri, poster)
-            }
-            scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
-            channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
+        allChannels = channels
+        renderedChannels = 0
+        moreButton = null
+        lastAddedProgram = null
+        appendMoreChannels()
+    }
+
+    fun renderedChannelCount(): Int = renderedChannels
+
+    fun setMoreLoading(loading: Boolean) {
+        moreButton?.isEnabled = !loading
+        moreButton?.text = if (loading) "Загружаю каналы…" else moreButtonLabel()
+        moreButton?.alpha = if (loading) .65f else 1f
+    }
+
+    /** Appends at most six channel shelves, avoiding hundreds of simultaneous poster cards. */
+    fun appendMoreChannels() {
+        val hadMoreFocus = moreButton?.hasFocus() == true
+        moreButton?.let { channelContainer.removeView(it) }
+        moreButton = null
+        lastAddedProgram = null
+
+        val end = (renderedChannels + channelBatchSize).coerceAtMost(allChannels.size)
+        for (index in renderedChannels until end) {
+            lastAddedProgram = addChannelRow(allChannels[index], index) ?: lastAddedProgram
         }
+        renderedChannels = end
+        if (renderedChannels < allChannels.size) addMoreButton()
+        updateDesiredHeight()
+        requestLayout()
+
+        if (hadMoreFocus) {
+            val target = moreButton ?: lastAddedProgram
+            target?.post { if (target.isFocusable) target.requestFocus() }
+        }
+    }
+
+    private fun addChannelRow(channel: TvChannels.Channel, channelIndex: Int): View? {
+        val title = sectionTitle(channel.name)
+        title.contentDescription = channel.name + " — " + channel.appName
+        channelContainer.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
+            topMargin = (12 * scale).toInt()
+        })
+        val scroll = horizontalRail()
+        val cards = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            clipChildren = false
+            clipToPadding = false
+        }
+        var lastFocusable: View? = null
+        channel.programs.take(12).forEachIndexed { index, program ->
+            val card = LinearLayout(context).apply {
+                tag = "program:" + channel.key + ":" + index
+                orientation = VERTICAL
+                isFocusable = true
+                isClickable = true
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(0x3AFFFFFF)
+                    cornerRadius = 14f * scale
+                    setStroke((1 * scale).toInt().coerceAtLeast(1), 0x44FFFFFF)
+                }
+                setPadding((6 * scale).toInt(), (6 * scale).toInt(), (6 * scale).toInt(), (6 * scale).toInt())
+                setOnFocusChangeListener { v, focused ->
+                    val bg = v.background as? android.graphics.drawable.GradientDrawable
+                    bg?.setStroke(
+                        (if (focused) 3 * scale else 1 * scale).toInt().coerceAtLeast(1),
+                        if (focused) 0xFFFFD28A.toInt() else 0x44FFFFFF
+                    )
+                    v.alpha = if (focused) 1f else .86f
+                    if (focused) {
+                        host.onKotlinAppFocused(program.title)
+                        host.ensureKotlinFocusVisible(v)
+                    }
+                }
+                setOnClickListener { host.launchTvProgramFromKotlin(program) }
+            }
+            val poster = ImageView(context).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(0x33202020)
+                isFocusable = false
+            }
+            card.addView(poster, LayoutParams(-1, (112 * scale).toInt()))
+            val label = TextView(context).apply {
+                text = program.title
+                textSize = 15f * scale
+                setTextColor(Color.WHITE)
+                maxLines = 2
+                gravity = Gravity.CENTER_VERTICAL
+                isFocusable = false
+            }
+            card.addView(label, LayoutParams(-1, (44 * scale).toInt()))
+            cards.addView(card, LayoutParams((196 * scale).toInt(), (166 * scale).toInt()).apply {
+                rightMargin = (12 * scale).toInt()
+            })
+            loadPoster(program.posterUri, poster)
+            lastFocusable = card
+        }
+        if (channel.programs.isEmpty()) {
+            val empty = TextView(context).apply {
+                text = "Программы канала не загружены"
+                textSize = 16f * scale
+                setTextColor(0xCCFFFFFF.toInt())
+                gravity = Gravity.CENTER
+                isFocusable = false
+            }
+            cards.addView(empty, LayoutParams((320 * scale).toInt(), (166 * scale).toInt()))
+        }
+        scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
+        channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
+        return lastFocusable
+    }
+
+    private fun addMoreButton() {
+        val button = TextView(context).apply {
+            tag = "more_channels"
+            text = moreButtonLabel()
+            textSize = 19f * scale
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            isFocusable = true
+            isClickable = true
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(0x553F6F68)
+                cornerRadius = 14f * scale
+                setStroke((1 * scale).toInt().coerceAtLeast(1), 0x88FFFFFF.toInt())
+            }
+            setOnFocusChangeListener { v, focused ->
+                val bg = v.background as? android.graphics.drawable.GradientDrawable
+                bg?.setStroke(
+                    (if (focused) 3 * scale else 1 * scale).toInt().coerceAtLeast(1),
+                    if (focused) 0xFFFFD28A.toInt() else 0x88FFFFFF.toInt()
+                )
+                if (focused) host.ensureKotlinFocusVisible(v)
+            }
+            setOnClickListener { host.loadMoreKotlinChannels() }
+        }
+        moreButton = button
+        channelContainer.addView(button, LayoutParams((380 * scale).toInt(), (58 * scale).toInt()).apply {
+            topMargin = (12 * scale).toInt()
+        })
+    }
+
+    private fun moreButtonLabel(): String {
+        val left = (allChannels.size - renderedChannels).coerceAtLeast(0)
+        return "Показать ещё каналы  ·  осталось $left"
+    }
+
+    private fun updateDesiredHeight() {
+        val moreHeight = if (renderedChannels < allChannels.size) 70 else 0
+        desiredHeight = (42 + 188 + 18 + renderedChannels * 232 + moreHeight + 42).let { (it * scale).toInt() }
     }
 
     private fun sectionTitle(value: String): TextView = TextView(context).apply {
