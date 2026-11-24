@@ -70,7 +70,7 @@ public final class TvChannelsActivity extends Activity {
         back.setGravity(Gravity.CENTER);
         back.setFocusable(true);
         back.setOnClickListener(v -> {
-            if (opened != null) { opened = null; refresh(); }
+            if (opened != null) { opened = null; render(); }
             else finish();
         });
         LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(
@@ -130,9 +130,9 @@ public final class TvChannelsActivity extends Activity {
             return;
         }
         int visible = 0;
-        for (TvChannels.Channel c : channels) if (!TvChannels.isHidden(this, c)) visible++;
-        subtitle.setText(L.t("Найдено каналов: ") + channels.size()
-                + L.t(" · показывается: ") + visible);
+        for (TvChannels.Channel c : channels) if (TvChannels.isSelected(this, c)) visible++;
+        subtitle.setText(L.t("Доступно каналов: ") + channels.size()
+                + L.t(" · на главном экране: ") + visible);
         if (channels.isEmpty()) {
             addMessage(L.t("Установленные приложения пока не опубликовали каналы Android TV."));
             return;
@@ -145,16 +145,17 @@ public final class TvChannelsActivity extends Activity {
             info.setOnClickListener(v -> openChannel(c));
             wrap.addView(info, new LinearLayout.LayoutParams(0, Math.round(78 * scale), 1f));
             CheckBox visibleBox = new CheckBox(this);
-            visibleBox.setText(L.t("Показывать"));
+            visibleBox.setText(L.t("На главном экране"));
             visibleBox.setTextColor(Color.WHITE);
             visibleBox.setTextSize(16 * scale);
             visibleBox.setButtonTintList(android.content.res.ColorStateList.valueOf(0xFFE4C78B));
-            visibleBox.setChecked(!TvChannels.isHidden(this, c));
+            visibleBox.setChecked(TvChannels.isSelected(this, c));
             visibleBox.setOnCheckedChangeListener((button, checked) -> {
-                TvChannels.setHidden(this, c, !checked);
-                int oldFocus = rows.indexOfChild(wrap);
-                refresh();
-                if (oldFocus >= 0 && oldFocus < rows.getChildCount()) rows.getChildAt(oldFocus).requestFocus();
+                TvChannels.setSelected(this, c, checked);
+                subtitle.setText(L.t("Доступно каналов: ") + channels.size()
+                        + L.t(" · на главном экране: ") + TvChannels.selectedCount(this));
+                // Keep the current row and focus in place; the main screen picks up
+                // the selection when the user returns to it.
             });
             wrap.addView(visibleBox);
             TextView up = new TextView(this);
