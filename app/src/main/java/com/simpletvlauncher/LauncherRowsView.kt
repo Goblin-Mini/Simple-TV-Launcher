@@ -14,12 +14,26 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.net.URL
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * Kotlin home content: a pinned All apps banner, one horizontal app-banner rail,
  * followed immediately by independently scrollable Android TV preview-channel rails.
  * The existing Java activity continues to own the status/header controls and remote-key policy.
  */
+private object LauncherPosterQueue {
+    // Отдельная очередь постеров не занимает общий IO-пул погоды и каталога.
+    // Ограниченная очередь не позволяет большому числу каналов создать сотни задач.
+    val executor = ThreadPoolExecutor(
+        2, 2, 0L, TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(24),
+        { task -> Thread(task, "launcher-poster").apply { isDaemon = true } },
+        ThreadPoolExecutor.DiscardOldestPolicy()
+    )
+}
+
 class LauncherRowsView(
     context: Context,
     private val host: MainActivity,
@@ -271,7 +285,7 @@ class LauncherRowsView(
     }
 
     private fun populateChannelCards(channel: TvChannels.Channel, cards: LinearLayout) {
-        channel.programs.take(12).forEachIndexed { index, program ->
+        channel.programs.take(6).forEachIndexed { index, program ->
             val card = LinearLayout(context).apply {
                 tag = "program:" + channel.key + ":" + index
                 orientation = VERTICAL
@@ -341,19 +355,33 @@ class LauncherRowsView(
 
     private fun loadPoster(raw: String?, target: ImageView) {
         if (raw.isNullOrBlank()) return
-        Weather.IO.execute {
-            try {
-                val uri = Uri.parse(raw)
-                val bitmap = if (uri.scheme == "http" || uri.scheme == "https") {
-                    URL(raw).openConnection().apply {
-                        connectTimeout = 5000
-                        readTimeout = 7000
-                    }.getInputStream().use { BitmapFactory.decodeStream(it) }
-                } else {
-                    context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
-                }
-                if (bitmap != null) host.runOnUiThread { target.setImageBitmap(bitmap) }
-            } catch (_: Exception) { }
+        try {
+            LauncherPosterQueue.executor.execute {
+                try {
+                    val uri = Uri.parse(raw)
+                    // Карточки на ТВ небольшие: уменьшаем декодирование и расход памяти.
+                    val options = BitmapFactory.Options().apply {
+                        inSampleSize = 2
+                        inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+                    }
+                    val bitmap = if (uri.scheme == "http" || uri.scheme == "https") {
+                        URL(raw).openConnection().apply {
+                            connectTimeout = 3500
+                            readTimeout = 4500
+                            useCaches = true
+                        }.getInputStream().use { BitmapFactory.decodeStream(it, null, options) }
+                    } else {
+                        context.contentResolver.openInputStream(uri)?.use {
+                            BitmapFactory.decodeStream(it, null, options)
+                        }
+                    }
+                    if (bitmap != null) host.runOnUiThread {
+                        if (target.isAttachedToWindow) target.setImageBitmap(bitmap) else bitmap.recycle()
+                    }
+                } catch (_: Exception) { }
+            }
+        } catch (_: Exception) {
+            // При переполнении очереди пропускаем постер, не блокируя интерфейс.
         }
     }
 }
