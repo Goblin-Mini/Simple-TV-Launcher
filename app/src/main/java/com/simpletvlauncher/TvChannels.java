@@ -112,7 +112,7 @@ final class TvChannels {
     static void setOrder(Context context, List<Channel> channels) {
         StringBuilder value = new StringBuilder();
         for (Channel channel : channels) {
-            if (value.length() > 0) value.append('\\n');
+            if (value.length() > 0) value.append("\\n");
             value.append(channel.key);
         }
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(ORDER, value.toString()).apply();
