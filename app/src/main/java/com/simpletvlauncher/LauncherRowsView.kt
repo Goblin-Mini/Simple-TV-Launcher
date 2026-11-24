@@ -55,8 +55,8 @@ class LauncherRowsView(
     private var channelModels: List<TvChannels.Channel> = emptyList()
     private var emptyChannelsRow: View? = null
 
-    private val sideWidth = (280 * scale).toInt()
-    private val channelRowHeight = (224 * scale).toInt()
+    private val sideWidth = (200 * scale).toInt()
+    private val channelRowHeight = (260 * scale).toInt()
 
     init {
         orientation = VERTICAL
@@ -146,10 +146,10 @@ class LauncherRowsView(
             }
             isFocusable = false
         }
-        panel.addView(icon, LayoutParams((112 * scale).toInt(), (112 * scale).toInt()))
+        panel.addView(icon, LayoutParams((88 * scale).toInt(), (88 * scale).toInt()))
         val label = TextView(context).apply {
             text = "Приложения"
-            textSize = 22f * scale
+            textSize = 20f * scale
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             isFocusable = false
@@ -240,7 +240,7 @@ class LauncherRowsView(
                         textSize = 21f * scale
                         setTextColor(Color.WHITE)
                         gravity = Gravity.CENTER
-                    }, LayoutParams(-1, (42 * scale).toInt()))
+                    }, LayoutParams(-1, (44 * scale).toInt()))
                 }
                 row.addView(left, LayoutParams(sideWidth, channelRowHeight))
                 val action = TextView(context).apply {
@@ -263,7 +263,9 @@ class LauncherRowsView(
                     }
                 }
                 row.addView(action, LayoutParams(0, (64 * scale).toInt(), 1f))
-                channelContainer.addView(row, LayoutParams(-1, channelRowHeight))
+                channelContainer.addView(row, LayoutParams(-1, channelRowHeight).apply {
+                    bottomMargin = (26 * scale).toInt()
+                })
                 emptyChannelsRow = row
             } else {
                 val action = (emptyChannelsRow as? ViewGroup)?.getChildAt(1) as? TextView
@@ -317,7 +319,9 @@ class LauncherRowsView(
                 if (channelShelfContainers.containsKey(channelModels[i].key)) insertAt++
             }
         }
-        channelContainer.addView(row, insertAt, LayoutParams(-1, channelRowHeight))
+        channelContainer.addView(row, insertAt, LayoutParams(-1, channelRowHeight).apply {
+            bottomMargin = (26 * scale).toInt()
+        })
         channelShelfContainers[channel.key] = row
         channelCardContainers[channel.key] = cards
 
@@ -352,7 +356,7 @@ class LauncherRowsView(
                 setImageDrawable(null)
             }
         }
-        panel.addView(icon, LayoutParams((112 * scale).toInt(), (104 * scale).toInt()))
+        panel.addView(icon, LayoutParams((78 * scale).toInt(), (78 * scale).toInt()))
         panel.addView(TextView(context).apply {
             text = channel.appName
             textSize = 21f * scale
@@ -385,7 +389,7 @@ class LauncherRowsView(
     }
 
     private fun populateChannelCards(channel: TvChannels.Channel, cards: LinearLayout) {
-        channel.programs.take(8).forEachIndexed { index, program ->
+        channel.programs.take(16).forEachIndexed { index, program ->
             val card = LinearLayout(context).apply {
                 tag = "program:" + channel.key + ":" + index
                 orientation = VERTICAL
@@ -417,7 +421,7 @@ class LauncherRowsView(
                 setBackgroundColor(0x33202020)
                 isFocusable = false
             }
-            card.addView(poster, LayoutParams(-1, (148 * scale).toInt()))
+            card.addView(poster, LayoutParams(-1, (172 * scale).toInt()))
             card.addView(TextView(context).apply {
                 text = program.title
                 textSize = 14f * scale
@@ -426,8 +430,8 @@ class LauncherRowsView(
                 gravity = Gravity.CENTER_VERTICAL
             }, LayoutParams(-1, (42 * scale).toInt()))
 
-            cards.addView(card, LayoutParams((204 * scale).toInt(), (198 * scale).toInt()).apply {
-                rightMargin = (12 * scale).toInt()
+            cards.addView(card, LayoutParams((204 * scale).toInt(), (224 * scale).toInt()).apply {
+                rightMargin = (8 * scale).toInt()
                 topMargin = (8 * scale).toInt()
                 bottomMargin = (8 * scale).toInt()
             })
@@ -437,8 +441,8 @@ class LauncherRowsView(
 
     private fun updateDesiredHeight() {
         desiredHeight = (
-            202 + channelShelfContainers.size * 224 +
-                (if (emptyChannelsRow != null) 224 else 0) + 50
+            202 + channelShelfContainers.size * 286 +
+                (if (emptyChannelsRow != null) 286 else 0) + 50
             ).let { (it * scale).toInt() }
     }
 
