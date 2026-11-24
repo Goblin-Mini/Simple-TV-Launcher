@@ -147,7 +147,7 @@ public class SettingsActivity extends Activity {
         divider();
         row(L.t("Клиент для VPN"), () -> vpnLabel(), this::askVpn);
         row(L.t("Приложение для поиска"), () -> searchLabel(), this::askSearch);
-        row(L.t("Каналы Android TV"), () -> TvChannels.hiddenCount(this) + L.t(" скрыто"),
+        row(L.t("Каналы Android TV"), () -> TvChannels.selectedCount(this) + L.t(" выбрано"),
                 () -> UI.start(this, new Intent(this, TvChannelsActivity.class)));
         divider();
         row(L.t("Показать все скрытые приложения"), () -> prefs.hidden().size() + L.t(" скрыто"), this::askShowAll);
