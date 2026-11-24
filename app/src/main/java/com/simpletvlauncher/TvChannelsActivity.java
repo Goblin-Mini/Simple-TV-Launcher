@@ -28,6 +28,7 @@ public final class TvChannelsActivity extends Activity {
     private TextView subtitle;
     private List<TvChannels.Channel> channels = new ArrayList<>();
     private TvChannels.Channel opened;
+    private int refreshGeneration;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
@@ -36,7 +37,7 @@ public final class TvChannelsActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 26 && !TvChannels.hasPermission(this)) {
             if (Build.VERSION.SDK_INT >= 23) requestPermissions(
                     new String[]{Manifest.permission.READ_TV_LISTINGS}, REQUEST_TV_LISTINGS);
-        } else refresh();
+        }
     }
 
     @Override protected void onResume() {
@@ -99,8 +100,16 @@ public final class TvChannelsActivity extends Activity {
             rows.addView(settings);
             return;
         }
-        channels = TvChannels.load(this, false);
-        render();
+        subtitle.setText(L.t("Загружаю каналы…"));
+        final int generation = ++refreshGeneration;
+        Weather.IO.execute(() -> {
+            final List<TvChannels.Channel> loaded = TvChannels.load(this, false);
+            runOnUiThread(() -> {
+                if (isFinishing() || generation != refreshGeneration) return;
+                channels = loaded;
+                render();
+            });
+        });
     }
 
     private void render() {
