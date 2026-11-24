@@ -51,7 +51,13 @@ public final class TvChannels {
     }
 
     static List<Channel> load(Context context, boolean selectedOnly) {
+        return load(context, selectedOnly, Integer.MAX_VALUE);
+    }
+
+    /** Loads channel metadata and only fetches programs for the first N visible channels. */
+    static List<Channel> load(Context context, boolean selectedOnly, int programChannelLimit) {
         List<Channel> result = new ArrayList<>();
+        int programChannelsLoaded = 0;
         if (Build.VERSION.SDK_INT < 26 || !hasPermission(context)) return result;
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         java.util.Set<String> hidden = prefs.getStringSet(HIDDEN, Collections.<String>emptySet());
@@ -84,7 +90,10 @@ public final class TvChannels {
                 } catch (Exception ignored) { }
                 Channel channel = new Channel(id, pkg, internal, name, app);
                 if (!selectedOnly || !hidden.contains(channel.key)) {
-                    readPrograms(context, channel);
+                    if (programChannelsLoaded < programChannelLimit) {
+                        readPrograms(context, channel, 12);
+                        programChannelsLoaded++;
+                    }
                     result.add(channel);
                 }
             }
@@ -118,7 +127,13 @@ public final class TvChannels {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(ORDER, value.toString()).apply();
     }
 
-    private static void readPrograms(Context context, Channel channel) {
+    static void loadPrograms(Context context, Channel channel, int limit) {
+        if (channel == null) return;
+        channel.programs.clear();
+        readPrograms(context, channel, Math.max(1, Math.min(40, limit)));
+    }
+
+    private static void readPrograms(Context context, Channel channel, int limit) {
         String[] projection = {
                 TvContract.PreviewPrograms._ID,
                 TvContract.PreviewPrograms.COLUMN_TITLE,
@@ -134,7 +149,7 @@ public final class TvChannels {
             int descCol = cursor.getColumnIndex(TvContract.PreviewPrograms.COLUMN_SHORT_DESCRIPTION);
             int intentCol = cursor.getColumnIndex(TvContract.PreviewPrograms.COLUMN_INTENT_URI);
             int posterCol = cursor.getColumnIndex(TvContract.PreviewPrograms.COLUMN_POSTER_ART_URI);
-            while (cursor.moveToNext() && channel.programs.size() < 40) {
+            while (cursor.moveToNext() && channel.programs.size() < limit) {
                 channel.programs.add(new Program(cursor.getString(titleCol), cursor.getString(descCol),
                         cursor.getString(intentCol), cursor.getString(posterCol)));
             }
