@@ -27,10 +27,12 @@ class LauncherRowsView(
     private val prefs: Prefs
 ) : LinearLayout(context) {
     private val scale = UI.scale(context)
-    private val imagePool = Executors.newFixedThreadPool(3)
     private val appRail = LinearLayout(context)
     private val channelContainer = LinearLayout(context)
     private var desiredHeight = 0
+    private var appsSignature = ""
+    private var channelsSignature = ""
+    private var allAppsButton: TextView? = null
 
     init {
         orientation = VERTICAL
@@ -47,10 +49,52 @@ class LauncherRowsView(
     fun contentHeight(): Int = desiredHeight
 
     fun render(apps: List<AppRepo.AppItem>, channels: List<TvChannels.Channel>) {
-        appRail.removeAllViews()
-        channelContainer.removeAllViews()
+        // Rebuild only the rail whose data changed. TV refreshes must not detach the
+        // currently focused app tile while the user is navigating with the remote.
+        val focusedTag = findFocus()?.tag as? String
+        val nextAppsSignature = apps.joinToString("|") { it.pkg + ":" + it.cls + ":" + it.label }
+        val nextChannelsSignature = channels.joinToString("|") { channel ->
+            channel.key + ":" + channel.programs.joinToString(";") { it.title + "@" + it.posterUri }
+        }
 
+        if (nextAppsSignature != appsSignature) {
+            buildAppRail(apps)
+            appsSignature = nextAppsSignature
+        }
+        if (nextChannelsSignature != channelsSignature) {
+            buildChannelRails(channels)
+            channelsSignature = nextChannelsSignature
+        }
+        desiredHeight = (42 + 188 + 18 + channels.size * 220 + 42).let { (it * scale).toInt() }
+        requestLayout()
+
+        post {
+            val target = if (!focusedTag.isNullOrBlank()) findViewWithTag<View>(focusedTag) else null
+            if (target != null && target.isFocusable && !target.hasFocus()) {
+                target.requestFocus()
+            } else if (!hasFocus()) {
+                focusFirst()
+            }
+        }
+    }
+
+    fun focusFirst() {
+        allAppsButton?.let { button ->
+            button.post { if (button.isAttachedToWindow) button.requestFocus() }
+        }
+    }
+
+    fun focusAppAt(index: Int) {
+        val target = appRail.getChildAt((index + 1).coerceAtMost(appRail.childCount - 1))
+        if (target != null) target.requestFocus() else focusFirst()
+    }
+
+    fun hasFocusedItem(): Boolean = findFocus() != null
+
+    private fun buildAppRail(apps: List<AppRepo.AppItem>) {
+        appRail.removeAllViews()
         val all = TextView(context).apply {
+            tag = "all_apps"
             text = "Все программы"
             textSize = 20f * scale
             setTextColor(Color.WHITE)
@@ -62,12 +106,23 @@ class LauncherRowsView(
                 cornerRadius = 18f * scale
                 setStroke((2 * scale).toInt().coerceAtLeast(1), 0x88FFFFFF.toInt())
             }
+            setOnFocusChangeListener { v, focused ->
+                if (focused) host.ensureKotlinFocusVisible(v)
+                alpha = if (focused) 1f else .86f
+            }
             setOnClickListener { host.openAllAppsPage() }
         }
+        allAppsButton = all
         val pinned = LinearLayout(context).apply {
             orientation = VERTICAL
             gravity = Gravity.CENTER
-            addView(TextView(context).apply { text = "▦"; textSize = 42f * scale; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
+            addView(TextView(context).apply {
+                text = "▦"
+                textSize = 42f * scale
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                isFocusable = false
+            })
             addView(all, LayoutParams((220 * scale).toInt(), (54 * scale).toInt()))
         }
         appRail.addView(pinned, LayoutParams((240 * scale).toInt(), (172 * scale).toInt()).apply {
@@ -76,12 +131,15 @@ class LauncherRowsView(
 
         apps.forEach { item ->
             val tile = MainActivity.AppTile(context, item, prefs.themeColor()).apply {
+                tag = "app:" + item.pkg
                 radius = 18f * scale
                 isFocusable = true
                 setOnClickListener { host.launchFromKotlin(item) }
                 setOnFocusChangeListener { v, focused ->
-                    if (focused) host.onKotlinAppFocused(item.label)
-                    invalidate()
+                    if (focused) {
+                        host.onKotlinAppFocused(item.label)
+                        host.ensureKotlinFocusVisible(v)
+                    }
                 }
                 setOnLongClickListener {
                     host.openKotlinAppMenu(this)
@@ -93,10 +151,12 @@ class LauncherRowsView(
                 topMargin = (4 * scale).toInt()
             })
         }
+    }
 
+    private fun buildChannelRails(channels: List<TvChannels.Channel>) {
+        channelContainer.removeAllViews()
         channels.forEach { channel ->
             val title = sectionTitle(channel.name)
-            title.text = channel.name
             title.contentDescription = channel.name + " — " + channel.appName
             channelContainer.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
                 topMargin = (12 * scale).toInt()
@@ -107,8 +167,9 @@ class LauncherRowsView(
                 clipChildren = false
                 clipToPadding = false
             }
-            channel.programs.take(14).forEach { program ->
+            channel.programs.take(12).forEachIndexed { index, program ->
                 val card = LinearLayout(context).apply {
+                    tag = "program:" + channel.key + ":" + index
                     orientation = VERTICAL
                     isFocusable = true
                     isClickable = true
@@ -120,13 +181,17 @@ class LauncherRowsView(
                     setPadding((6 * scale).toInt(), (6 * scale).toInt(), (6 * scale).toInt(), (6 * scale).toInt())
                     setOnFocusChangeListener { v, focused ->
                         v.alpha = if (focused) 1f else .82f
-                        if (focused) host.onKotlinAppFocused(program.title)
+                        if (focused) {
+                            host.onKotlinAppFocused(program.title)
+                            host.ensureKotlinFocusVisible(v)
+                        }
                     }
                     setOnClickListener { host.launchTvProgramFromKotlin(program) }
                 }
                 val poster = ImageView(context).apply {
                     scaleType = ImageView.ScaleType.CENTER_CROP
                     setBackgroundColor(0x33202020)
+                    isFocusable = false
                 }
                 card.addView(poster, LayoutParams(-1, (112 * scale).toInt()))
                 val label = TextView(context).apply {
@@ -135,6 +200,7 @@ class LauncherRowsView(
                     setTextColor(Color.WHITE)
                     maxLines = 2
                     gravity = Gravity.CENTER_VERTICAL
+                    isFocusable = false
                 }
                 card.addView(label, LayoutParams(-1, (44 * scale).toInt()))
                 cards.addView(card, LayoutParams((196 * scale).toInt(), (166 * scale).toInt()).apply {
@@ -145,8 +211,6 @@ class LauncherRowsView(
             scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
             channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
         }
-        desiredHeight = (42 + 188 + 18 + channels.size * 220 + 42).let { (it * scale).toInt() }
-        requestLayout()
     }
 
     private fun sectionTitle(value: String): TextView = TextView(context).apply {
@@ -167,7 +231,7 @@ class LauncherRowsView(
 
     private fun loadPoster(raw: String?, target: ImageView) {
         if (raw.isNullOrBlank()) return
-        imagePool.execute {
+        Weather.IO.execute {
             try {
                 val uri = Uri.parse(raw)
                 val bitmap = if (uri.scheme == "http" || uri.scheme == "https") {
