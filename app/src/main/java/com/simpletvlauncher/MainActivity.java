@@ -906,7 +906,13 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(Math.round(190 * s), Math.round(164 * s));
                 cp.rightMargin = Math.round(12 * s);
                 cards.addView(card, cp);
-                card.setOnFocusChangeListener(focusL);
+                card.setOnFocusChangeListener((v, focused) -> {
+                    v.setBackgroundColor(focused ? 0x55FFFFFF : 0x2AFFFFFF);
+                    if (focused) {
+                        ensureVisible(v);
+                        if (program.title != null && !program.title.isEmpty()) setShelf(program.title);
+                    }
+                });
                 card.setOnClickListener(v -> launchTvProgram(program));
                 loadTvPoster(program.posterUri, poster);
             }
