@@ -817,6 +817,12 @@ public class MainActivity extends Activity {
             content.addView(kotlinHome, hp);
         }
         kotlinHome.render(visible, launcherChannels);
+        // Старые подписи прежней сетки не должны лежать поверх нового Kotlin-интерфейса.
+        if (appsHdr != null) appsHdr.setVisibility(View.GONE);
+        if (shelfTitle != null) {
+            shelfTitle.setText("");
+            shelfTitle.setVisibility(View.GONE);
+        }
         frost.setVisibility(View.GONE);
         for (AppTile old : tiles) {
             if (old.getParent() == content) content.removeView(old);
@@ -1348,9 +1354,9 @@ public class MainActivity extends Activity {
     }
 
     private void setShelf(String title) {
-        if (!title.contentEquals(shelfTitle.getText())) {
-            shelfTitle.setText(title);
-        }
+        // В новом домашнем экране старый заголовок фокуса перекрывал ряды приложений.
+        if (kotlinHome != null || shelfTitle == null) return;
+        if (!title.contentEquals(shelfTitle.getText())) shelfTitle.setText(title);
     }
 
     // ------------------------------------------------------------ часы и статус сети
