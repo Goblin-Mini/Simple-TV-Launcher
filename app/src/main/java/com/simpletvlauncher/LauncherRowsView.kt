@@ -35,6 +35,7 @@ class LauncherRowsView(
     private var channelsBuilt = false
     private var allAppsButton: TextView? = null
     private val channelCardContainers = LinkedHashMap<String, LinearLayout>()
+    private val channelShelfContainers = LinkedHashMap<String, LinearLayout>()
     private var channelModels: List<TvChannels.Channel> = emptyList()
     private var loadingChannelsLabel: TextView? = null
 
@@ -166,32 +167,52 @@ class LauncherRowsView(
     }
 
     private fun buildChannelRails(channels: List<TvChannels.Channel>) {
-        channelContainer.removeAllViews()
-        channelCardContainers.clear()
-        channelModels = channels
-        loadingChannelsLabel = null
-        if (channels.isNotEmpty()) {
-            loadingChannelsLabel = TextView(context).apply {
-                text = "Загружаю выбранные каналы…"
-                textSize = 17f * scale
-                setTextColor(0xCCFFFFFF.toInt())
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            channelContainer.addView(loadingChannelsLabel, LayoutParams(-1, (56 * scale).toInt()))
+        // Diff the selected set rather than replacing the whole channel area.
+        // Existing rows remain on screen when the user adds or removes one channel.
+        val wanted = channels.map { it.key }.toSet()
+        val removed = channelShelfContainers.keys.filter { it !in wanted }
+        removed.forEach { key ->
+            channelShelfContainers.remove(key)?.let { channelContainer.removeView(it) }
+            channelCardContainers.remove(key)
         }
+        channelModels = channels
+        updateLoadingLabel()
         updateDesiredHeight()
+    }
+
+    private fun updateLoadingLabel() {
+        if (channelModels.isNotEmpty() && channelShelfContainers.isEmpty()) {
+            if (loadingChannelsLabel == null) {
+                loadingChannelsLabel = TextView(context).apply {
+                    text = "Загружаю выбранные каналы…"
+                    textSize = 17f * scale
+                    setTextColor(0xCCFFFFFF.toInt())
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                channelContainer.addView(loadingChannelsLabel, LayoutParams(-1, (56 * scale).toInt()))
+            }
+        } else {
+            loadingChannelsLabel?.let { channelContainer.removeView(it) }
+            loadingChannelsLabel = null
+        }
     }
 
     /** Add one selected channel only after its program data is ready. */
     fun updateChannelPrograms(channel: TvChannels.Channel) {
-        if (channelCardContainers.containsKey(channel.key)) return
+        if (channelShelfContainers.containsKey(channel.key)) return
         if (loadingChannelsLabel != null) {
             channelContainer.removeView(loadingChannelsLabel)
             loadingChannelsLabel = null
         }
+
+        val shelf = LinearLayout(context).apply {
+            orientation = VERTICAL
+            clipChildren = false
+            clipToPadding = false
+        }
         val title = sectionTitle(channel.name)
         title.contentDescription = channel.name + " — " + channel.appName
-        channelContainer.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
+        shelf.addView(title, LayoutParams(-1, (42 * scale).toInt()).apply {
             topMargin = (12 * scale).toInt()
         })
         val scroll = horizontalRail()
@@ -200,9 +221,20 @@ class LauncherRowsView(
             clipChildren = false
             clipToPadding = false
         }
-        channelCardContainers[channel.key] = cards
         scroll.addView(cards, FrameLayout.LayoutParams(-2, -2))
-        channelContainer.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
+        shelf.addView(scroll, LayoutParams(-1, (178 * scale).toInt()))
+
+        val desiredIndex = channelModels.indexOfFirst { it.key == channel.key }
+        var insertAt = 0
+        if (desiredIndex > 0) {
+            for (i in 0 until desiredIndex) {
+                if (channelShelfContainers.containsKey(channelModels[i].key)) insertAt++
+            }
+        }
+        channelContainer.addView(shelf, insertAt)
+        channelShelfContainers[channel.key] = shelf
+        channelCardContainers[channel.key] = cards
+
         if (channel.programs.isEmpty()) {
             addChannelPlaceholder(cards, "Программы пока не опубликованы")
         } else {
@@ -274,7 +306,7 @@ class LauncherRowsView(
     }
 
     private fun updateDesiredHeight() {
-        desiredHeight = (42 + 188 + 18 + channelCardContainers.size * 232 + (if (loadingChannelsLabel != null) 56 else 0) + 42).let { (it * scale).toInt() }
+        desiredHeight = (42 + 188 + 18 + channelShelfContainers.size * 232 + (if (loadingChannelsLabel != null) 56 else 0) + 42).let { (it * scale).toInt() }
     }
 
     private fun sectionTitle(value: String): TextView = TextView(context).apply {
