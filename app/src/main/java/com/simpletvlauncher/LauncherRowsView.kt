@@ -37,6 +37,7 @@ class LauncherRowsView(
     private var allChannels: List<TvChannels.Channel> = emptyList()
     private var renderedChannels = 0
     private var moreButton: TextView? = null
+    private var restoreMoreFocus = false
     private var lastAddedProgram: View? = null
     private val channelBatchSize = 6
 
@@ -113,8 +114,14 @@ class LauncherRowsView(
                 setStroke((2 * scale).toInt().coerceAtLeast(1), 0x88FFFFFF.toInt())
             }
             setOnFocusChangeListener { v, focused ->
+                val bg = v.background as? android.graphics.drawable.GradientDrawable
+                bg?.setColor(if (focused) 0xFFEEE8DE.toInt() else 0x553F6F68)
+                bg?.setStroke(
+                    (if (focused) 4 * scale else 2 * scale).toInt().coerceAtLeast(1),
+                    if (focused) 0xFFFFD28A.toInt() else 0x88FFFFFF.toInt()
+                )
+                setTextColor(if (focused) 0xFF182321.toInt() else Color.WHITE)
                 if (focused) host.ensureKotlinFocusVisible(v)
-                alpha = if (focused) 1f else .86f
             }
             setOnClickListener { host.openAllAppsPage() }
         }
@@ -171,6 +178,7 @@ class LauncherRowsView(
     fun renderedChannelCount(): Int = renderedChannels
 
     fun setMoreLoading(loading: Boolean) {
+        if (loading && moreButton?.hasFocus() == true) restoreMoreFocus = true
         moreButton?.isEnabled = !loading
         moreButton?.text = if (loading) "Загружаю каналы…" else moreButtonLabel()
         moreButton?.alpha = if (loading) .65f else 1f
@@ -178,7 +186,8 @@ class LauncherRowsView(
 
     /** Appends at most six channel shelves, avoiding hundreds of simultaneous poster cards. */
     fun appendMoreChannels() {
-        val hadMoreFocus = moreButton?.hasFocus() == true
+        val hadMoreFocus = moreButton?.hasFocus() == true || restoreMoreFocus
+        restoreMoreFocus = false
         moreButton?.let { channelContainer.removeView(it) }
         moreButton = null
         lastAddedProgram = null
