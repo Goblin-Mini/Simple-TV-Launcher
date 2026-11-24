@@ -1,6 +1,5 @@
 package com.simpletvlauncher;
 
-import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -36,7 +35,7 @@ public final class TvChannelsActivity extends Activity {
         buildShell();
         if (Build.VERSION.SDK_INT >= 26 && !TvChannels.hasPermission(this)) {
             if (Build.VERSION.SDK_INT >= 23) requestPermissions(
-                    new String[]{Manifest.permission.READ_TV_LISTINGS}, REQUEST_TV_LISTINGS);
+                    new String[]{TvChannels.PERMISSION}, REQUEST_TV_LISTINGS);
         }
     }
 
