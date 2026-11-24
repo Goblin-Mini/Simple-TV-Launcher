@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 // Release signing: keystore.properties (storeFile, storePassword, keyAlias, keyPassword) lives in the project root
