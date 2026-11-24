@@ -938,7 +938,7 @@ public class MainActivity extends Activity {
             startActivity(intent);
         } catch (Exception ignored) {
             try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(program.intentUri))); }
-            catch (Exception ignoredAgain) { toast(L.t("Не удалось открыть программу")); }
+            catch (Exception ignoredAgain) { android.widget.Toast.makeText(this, L.t("Не удалось открыть программу"), android.widget.Toast.LENGTH_SHORT).show(); }
         }
     }
 
