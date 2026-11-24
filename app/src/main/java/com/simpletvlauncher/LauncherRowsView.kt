@@ -240,7 +240,7 @@ class LauncherRowsView(
                         textSize = 21f * scale
                         setTextColor(Color.WHITE)
                         gravity = Gravity.CENTER
-                    }, LayoutParams(-1, (44 * scale).toInt()))
+                    }, LayoutParams(-1, (48 * scale).toInt()))
                 }
                 row.addView(left, LayoutParams(sideWidth, channelRowHeight))
                 val action = TextView(context).apply {
@@ -436,7 +436,7 @@ class LauncherRowsView(
                 gravity = Gravity.CENTER_VERTICAL
             }, LayoutParams(-1, (42 * scale).toInt()))
 
-            cards.addView(card, LayoutParams((236 * scale).toInt(), (246 * scale).toInt()).apply {
+            cards.addView(card, LayoutParams((236 * scale).toInt(), (252 * scale).toInt()).apply {
                 rightMargin = (12 * scale).toInt()
                 topMargin = (6 * scale).toInt()
                 bottomMargin = (6 * scale).toInt()
