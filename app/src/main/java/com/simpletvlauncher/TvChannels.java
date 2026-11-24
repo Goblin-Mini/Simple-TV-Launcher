@@ -1,6 +1,5 @@
 package com.simpletvlauncher;
 
-import android.Manifest;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -15,6 +14,7 @@ import java.util.List;
 
 /** Reads preview channels published by installed TV apps. Visibility is launcher-local. */
 final class TvChannels {
+    static final String PERMISSION = "android.permission.READ_TV_LISTINGS";
     private static final String PREFS = "tv_channels";
     private static final String HIDDEN = "hidden_channel_keys";
 
@@ -46,7 +46,7 @@ final class TvChannels {
 
     static boolean hasPermission(Context c) {
         return Build.VERSION.SDK_INT < 23 ||
-                c.checkSelfPermission(Manifest.permission.READ_TV_LISTINGS) == PackageManager.PERMISSION_GRANTED;
+                c.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED;
     }
 
     static List<Channel> load(Context context, boolean selectedOnly) {
