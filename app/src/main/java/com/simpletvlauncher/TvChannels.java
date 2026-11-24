@@ -13,13 +13,13 @@ import java.util.Collections;
 import java.util.List;
 
 /** Reads preview channels published by installed TV apps. Visibility is launcher-local. */
-final class TvChannels {
+public final class TvChannels {
     static final String PERMISSION = "android.permission.READ_TV_LISTINGS";
     private static final String PREFS = "tv_channels";
     private static final String HIDDEN = "hidden_channel_keys";
     private static final String ORDER = "channel_order_v1";
 
-    static final class Channel {
+    public static final class Channel {
         final long id;
         final String packageName, internalId, name, appName;
         final String key;
@@ -35,7 +35,7 @@ final class TvChannels {
         }
     }
 
-    static final class Program {
+    public static final class Program {
         final String title, description, intentUri, posterUri;
         Program(String title, String description, String intentUri, String posterUri) {
             this.title = title == null ? "" : title;
