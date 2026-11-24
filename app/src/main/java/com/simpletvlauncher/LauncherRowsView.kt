@@ -1,6 +1,7 @@
 package com.simpletvlauncher
 
 import android.animation.ValueAnimator
+import java.io.BufferedInputStream
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -698,28 +699,32 @@ class LauncherRowsView(
                     connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android TV) AppleWebKit/537.36 Chrome/120 Safari/537.36")
                     connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
                     if (connection is HttpURLConnection) connection.instanceFollowRedirects = true
-                    connection.getInputStream().use { input ->
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        input.mark(16 * 1024)
-                        BitmapFactory.decodeStream(input, null, bounds)
-                        input.reset()
-                        val options = BitmapFactory.Options().apply {
-                            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
-                            inPreferredConfig = Bitmap.Config.RGB_565
+                    connection.getInputStream().use { source ->
+                        BufferedInputStream(source).use { input ->
+                            input.mark(64 * 1024)
+                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            BitmapFactory.decodeStream(input, null, bounds)
+                            input.reset()
+                            val options = BitmapFactory.Options().apply {
+                                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
+                                inPreferredConfig = Bitmap.Config.RGB_565
+                            }
+                            BitmapFactory.decodeStream(input, null, options)
                         }
-                        BitmapFactory.decodeStream(input, null, options)
                     }
                 } else {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        input.mark(16 * 1024)
-                        BitmapFactory.decodeStream(input, null, bounds)
-                        input.reset()
-                        val options = BitmapFactory.Options().apply {
-                            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
-                            inPreferredConfig = Bitmap.Config.RGB_565
+                    context.contentResolver.openInputStream(uri)?.use { source ->
+                        BufferedInputStream(source).use { input ->
+                            input.mark(64 * 1024)
+                            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                            BitmapFactory.decodeStream(input, null, bounds)
+                            input.reset()
+                            val options = BitmapFactory.Options().apply {
+                                inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight)
+                                inPreferredConfig = Bitmap.Config.RGB_565
+                            }
+                            BitmapFactory.decodeStream(input, null, options)
                         }
-                        BitmapFactory.decodeStream(input, null, options)
                     }
                 }
 
