@@ -841,24 +841,6 @@ public class MainActivity extends Activity {
     }
 
     /** Load the next small group of channel programs only when the user reaches the end of the current group. */
-    public void loadMoreKotlinChannels() {
-        if (loadingMoreTvChannels || kotlinHome == null) return;
-        final int from = kotlinHome.renderedChannelCount();
-        if (from >= launcherChannels.size()) return;
-        final int to = Math.min(from + 6, launcherChannels.size());
-        loadingMoreTvChannels = true;
-        kotlinHome.setMoreLoading(true);
-        Weather.IO.execute(() -> {
-            for (int i = from; i < to; i++) TvChannels.loadPrograms(this, launcherChannels.get(i), 12);
-            runOnUiThread(() -> {
-                loadingMoreTvChannels = false;
-                if (isFinishing() || kotlinHome == null) return;
-                kotlinHome.appendMoreChannels();
-                updateKotlinContentHeight();
-            });
-        });
-    }
-
     /** Scroll the outer list when a Kotlin banner receives DPAD focus. */
     public void ensureKotlinFocusVisible(View focused) {
         if (focused == null || content == null || sv == null || focused.getParent() == null) return;
@@ -893,12 +875,30 @@ public class MainActivity extends Activity {
             return;
         }
         Weather.IO.execute(() -> {
-            final List<TvChannels.Channel> loaded = TvChannels.load(this, true, 6);
+            // Metadata is read only for channels explicitly selected by the user.
+            // No programs or posters are queried as part of the initial list scan.
+            final List<TvChannels.Channel> loaded = TvChannels.load(this, true, 0);
             runOnUiThread(() -> {
                 if (isFinishing() || generation != tvLoadGeneration) return;
                 launcherChannels = loaded;
                 if (content != null) layoutContent();
+                loadSelectedChannelPrograms(loaded, generation);
             });
+        });
+    }
+
+    /** Fetches selected channels one by one; each completed row appears immediately. */
+    private void loadSelectedChannelPrograms(List<TvChannels.Channel> channels, int generation) {
+        if (channels == null || channels.isEmpty()) return;
+        Weather.IO.execute(() -> {
+            for (TvChannels.Channel channel : channels) {
+                TvChannels.loadPrograms(this, channel, 12);
+                runOnUiThread(() -> {
+                    if (isFinishing() || generation != tvLoadGeneration || kotlinHome == null) return;
+                    kotlinHome.updateChannelPrograms(channel);
+                    updateKotlinContentHeight();
+                });
+            }
         });
     }
 
